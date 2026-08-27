@@ -3,6 +3,6 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "cd dashboard && npm install && npm run build && rm -rf ../.vercel/output && cp -r .vercel/output ../"
+    "build": "cd dashboard && npm install && NITRO_OUTPUT_DIR=../.vercel/output npm run build"
   }
 }
