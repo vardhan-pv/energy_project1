@@ -1,0 +1,4 @@
+{
+  "buildCommand": "cd dashboard && npm install && npm run build && cp -r .vercel/output ../",
+  "outputDirectory": ".vercel/output"
+}
