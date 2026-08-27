@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: energy-backend
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn api_server:app
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: PORT
+        value: 5000
