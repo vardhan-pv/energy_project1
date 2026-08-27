@@ -14,7 +14,7 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+/lib/
 lib64/
 parts/
 sdist/
@@ -108,7 +108,7 @@ env/
 ENV/
 bin/
 include/
-lib/
+/lib/
 share/
 
 # PEP 582; used by e.g. pdm
