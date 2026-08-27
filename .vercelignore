@@ -1,0 +1,12 @@
+# Ignore Python files and requirements so Vercel does NOT attempt
+# to package Python serverless functions (which exceed Vercel's 250MB function limit).
+api_server.py
+requirements.txt
+render.yaml
+*.py
+ml_models/
+rl_models/
+peak_models/
+ml_data/
+feature_output/
+house_data/
