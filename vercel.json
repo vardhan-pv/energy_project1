@@ -1,0 +1,20 @@
+{
+  "builds": [
+    {
+      "src": "dashboard/package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "dashboard/.output/public"
+      }
+    }
+  ],
+  "routes": [
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "dashboard/.output/public/index.html"
+    }
+  ]
+}
