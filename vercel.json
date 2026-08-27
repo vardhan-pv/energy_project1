@@ -14,7 +14,7 @@
     },
     {
       "src": "/(.*)",
-      "dest": "dashboard/.output/public/index.html"
+      "dest": "/index.html"
     }
   ]
 }
