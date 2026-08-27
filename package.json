@@ -1,8 +1,0 @@
-{
-  "name": "energy-project-root",
-  "version": "1.0.0",
-  "private": true,
-  "scripts": {
-    "build": "cd dashboard && npm install && NITRO_OUTPUT_DIR=../.vercel/output npm run build"
-  }
-}
