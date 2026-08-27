@@ -1,4 +1,3 @@
 {
-  "buildCommand": "cd dashboard && npm install && npm run build && rm -rf ../.vercel/output && cp -r .vercel/output ../",
-  "outputDirectory": ".vercel/output"
+  "buildCommand": "cd dashboard && npm install && npm run build && rm -rf ../.vercel/output && cp -r .vercel/output ../"
 }
