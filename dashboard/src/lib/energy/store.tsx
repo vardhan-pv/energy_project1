@@ -339,31 +339,75 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const loginUser = async (identifier: string, pass: string) => {
-    const ds = createHttpDataSource(settings.apiBaseUrl);
-    const res = await ds.login(identifier, pass);
-    if (res.ok && res.token) {
-      setToken(res.token);
-      setUser(res.user);
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem("ceos.token", res.token);
-        window.localStorage.setItem("ceos.user", JSON.stringify(res.user));
+    let ds = createHttpDataSource(settings.apiBaseUrl);
+    try {
+      const res = await ds.login(identifier, pass);
+      if (res.ok && res.token) {
+        setToken(res.token);
+        setUser(res.user);
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem("ceos.token", res.token);
+          window.localStorage.setItem("ceos.user", JSON.stringify(res.user));
+        }
+        return res.user;
       }
-      return res.user;
+    } catch (err) {
+      if (settings.apiBaseUrl.includes("onrender.com")) {
+        try {
+          const altDs = createHttpDataSource("http://localhost:5000");
+          const res = await altDs.login(identifier, pass);
+          if (res.ok && res.token) {
+            updateSettings({ apiBaseUrl: "http://localhost:5000" });
+            setToken(res.token);
+            setUser(res.user);
+            if (typeof window !== "undefined") {
+              window.localStorage.setItem("ceos.token", res.token);
+              window.localStorage.setItem("ceos.user", JSON.stringify(res.user));
+            }
+            return res.user;
+          }
+        } catch {
+          // ignore
+        }
+      }
+      throw err;
     }
     throw new Error("Login failed");
   };
 
   const registerUser = async (name: string, email: string, pass: string) => {
-    const ds = createHttpDataSource(settings.apiBaseUrl);
-    const res = await ds.register(name, email, pass);
-    if (res.ok && res.token) {
-      setToken(res.token);
-      setUser(res.user);
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem("ceos.token", res.token);
-        window.localStorage.setItem("ceos.user", JSON.stringify(res.user));
+    let ds = createHttpDataSource(settings.apiBaseUrl);
+    try {
+      const res = await ds.register(name, email, pass);
+      if (res.ok && res.token) {
+        setToken(res.token);
+        setUser(res.user);
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem("ceos.token", res.token);
+          window.localStorage.setItem("ceos.user", JSON.stringify(res.user));
+        }
+        return res.user;
       }
-      return res.user;
+    } catch (err) {
+      if (settings.apiBaseUrl.includes("onrender.com")) {
+        try {
+          const altDs = createHttpDataSource("http://localhost:5000");
+          const res = await altDs.register(name, email, pass);
+          if (res.ok && res.token) {
+            updateSettings({ apiBaseUrl: "http://localhost:5000" });
+            setToken(res.token);
+            setUser(res.user);
+            if (typeof window !== "undefined") {
+              window.localStorage.setItem("ceos.token", res.token);
+              window.localStorage.setItem("ceos.user", JSON.stringify(res.user));
+            }
+            return res.user;
+          }
+        } catch {
+          // ignore
+        }
+      }
+      throw err;
     }
     throw new Error("Registration failed");
   };
