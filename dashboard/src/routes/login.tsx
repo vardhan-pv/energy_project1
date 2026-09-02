@@ -77,7 +77,7 @@ function LoginPage() {
           </div>
           <div>
             <h1 className="font-bold text-xl tracking-tight">Energy Intelligence</h1>
-            <p className="text-xs text-muted-foreground">Phase 15 Multi-User Control System</p>
+            <p className="text-xs text-muted-foreground">Multi-User Energy Control System</p>
           </div>
         </div>
 

@@ -579,6 +579,23 @@ def auth_me():
     return jsonify({"ok": True, "user": profile})
 
 
+@app.route("/api/auth/profile", methods=["PUT"])
+def update_auth_profile():
+    user_id = get_auth_user_id()
+    if not user_id:
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    name = data.get("name")
+    email = data.get("email")
+    try:
+        updated = db.update_user_profile(user_id, name, email)
+        return jsonify({"ok": True, "user": updated})
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 409
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @app.route("/api/houses", methods=["GET", "POST"])
 def manage_houses():
     user_id = get_auth_user_id()
@@ -595,6 +612,20 @@ def manage_houses():
     else:
         houses = db.get_user_houses(user_id)
         return jsonify(houses)
+
+
+@app.route("/api/houses/<house_id>", methods=["PUT"])
+def update_house_route(house_id):
+    user_id = get_auth_user_id()
+    if not user_id:
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    house_name = data.get("house_name") or data.get("name")
+    location = data.get("location")
+    updated = db.update_house(house_id, house_name, location)
+    if not updated:
+        return jsonify({"ok": False, "error": "House not found"}), 404
+    return jsonify({"ok": True, "house": updated})
 
 
 @app.route("/api/devices", methods=["GET", "POST"])
@@ -661,6 +692,27 @@ def manage_appliances():
         return jsonify(result)
 
 
+@app.route("/api/appliances/<appliance_id>", methods=["DELETE"])
+def delete_appliance_route(appliance_id):
+    user_id = get_auth_user_id()
+    if not user_id:
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+    houses = db.get_user_houses(user_id)
+    if not houses:
+        return jsonify({"ok": False, "error": "House not found"}), 404
+    u_apps = db.get_house_appliances(houses[0]["id"])
+    valid_ids = {a["id"] for a in u_apps}
+    if appliance_id not in valid_ids:
+        return jsonify({"ok": False, "error": "Appliance does not belong to logged-in user house"}), 403
+    deleted = db.delete_appliance(appliance_id)
+    if deleted:
+        with _lock:
+            _current_state.pop(appliance_id, None)
+            _telemetry_buffers.pop(appliance_id, None)
+        return jsonify({"ok": True})
+    return jsonify({"ok": False, "error": "Appliance not found"}), 404
+
+
 @app.route("/api/house", methods=["GET"])
 def get_house():
     user_id = get_auth_user_id()
@@ -696,6 +748,8 @@ def get_telemetry():
                             user_state["id"] = aid
                             user_state["name"] = app_info["name"]
                             user_state["targetPowerW"] = app_info["ratedPowerW"]
+                            user_state["powerW"] = round(app_info["ratedPowerW"] * (0.65 + (hash(aid) % 40) / 100.0), 1)
+                            _current_state[aid] = user_state
                             result.append(user_state)
                     return jsonify(result)
 

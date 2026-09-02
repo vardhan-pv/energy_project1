@@ -112,7 +112,7 @@ export function SetupWizardPage() {
             </div>
             <div>
               <h1 className="font-bold text-xl">Digital House Installation Wizard</h1>
-              <p className="text-xs text-muted-foreground">Phase 15 Dynamic Hardware & Appliance Setup</p>
+              <p className="text-xs text-muted-foreground">Dynamic Hardware & Appliance Setup</p>
             </div>
           </div>
           <div className="text-right">
@@ -290,7 +290,7 @@ export function SetupWizardPage() {
           <div className="flex flex-col gap-6 py-4">
             <div className="text-center border-b pb-4">
               <h2 className="font-bold text-2xl tracking-tight text-primary">INSTALLATION COMPLETE</h2>
-              <p className="text-xs text-muted-foreground mt-1">Phase 15 Multi-User Digital House Active</p>
+              <p className="text-xs text-muted-foreground mt-1">Multi-User Digital House Active</p>
             </div>
 
             <div className="bg-card p-6 rounded-xl border flex flex-col gap-3 font-mono text-sm shadow-inner">

@@ -45,12 +45,9 @@ export interface UserProfile {
 export interface EnergyDataSource {
   register(name: string, email: string, password: string): Promise<{ ok: boolean; user: UserProfile; token: string }>;
   login(identifier: string, password: string): Promise<{ ok: boolean; user: UserProfile; token: string }>;
-  getCurrentUser(): Promise<{ ok: boolean; user: UserProfile }>;
-  createHouse(houseName: string, location: string): Promise<{ ok: boolean; house: House }>;
-  getHouses(): Promise<House[]>;
-  createDevice(deviceType: string, deviceName: string, macAddress?: string): Promise<{ ok: boolean; device: any }>;
-  getDevices(): Promise<any[]>;
-  createAppliance(deviceId: string | null, name: string, type: string, ratedPowerW: number): Promise<{ ok: boolean; appliance: any }>;
+  updateProfile(name?: string, email?: string): Promise<{ ok: boolean; user: UserProfile }>;
+  updateHouse(houseId: string, houseName?: string, location?: string): Promise<{ ok: boolean; house: House }>;
+  deleteAppliance(applianceId: string): Promise<{ ok: boolean }>;
   getHouse(): Promise<House>;
   listAppliances(): Promise<ApplianceProfile[]>;
   getTelemetry(): Promise<ApplianceRuntime[]>;
@@ -111,9 +108,19 @@ export function createHttpDataSource(baseUrl: string, getToken?: () => string | 
         body: JSON.stringify({ user_id: identifier, password }),
       }),
     getCurrentUser: () => json<{ ok: boolean; user: UserProfile }>("/api/auth/me"),
+    updateProfile: (name, email) =>
+      json<{ ok: boolean; user: UserProfile }>("/api/auth/profile", {
+        method: "PUT",
+        body: JSON.stringify({ name, email }),
+      }),
     createHouse: (houseName, location) =>
       json<{ ok: boolean; house: House }>("/api/houses", {
         method: "POST",
+        body: JSON.stringify({ house_name: houseName, location }),
+      }),
+    updateHouse: (houseId, houseName, location) =>
+      json<{ ok: boolean; house: House }>(`/api/houses/${houseId}`, {
+        method: "PUT",
         body: JSON.stringify({ house_name: houseName, location }),
       }),
     getHouses: () => json<House[]>("/api/houses"),
@@ -127,6 +134,10 @@ export function createHttpDataSource(baseUrl: string, getToken?: () => string | 
       json<{ ok: boolean; appliance: any }>("/api/appliances", {
         method: "POST",
         body: JSON.stringify({ device_id: deviceId, appliance_name: name, appliance_type: type, rated_power_w: ratedPowerW }),
+      }),
+    deleteAppliance: (applianceId) =>
+      json<{ ok: boolean }>(`/api/appliances/${applianceId}`, {
+        method: "DELETE",
       }),
     getHouse: () => json<House>("/api/house"),
     listAppliances: () => json<ApplianceProfile[]>("/api/appliances"),

@@ -244,6 +244,32 @@ def get_user_profile(user_id: str) -> dict:
     return user_dict
 
 
+def update_user_profile(user_id: str, name: str = None, email: str = None) -> dict:
+    """Update user's profile details in real-time."""
+    conn = get_db()
+    cursor = conn.cursor()
+    fields = []
+    vals = []
+    if name is not None and name.strip():
+        fields.append("name = ?")
+        vals.append(name.strip())
+    if email is not None and email.strip():
+        email_clean = email.strip().lower()
+        cursor.execute("SELECT user_id FROM users WHERE email = ? AND user_id != ?;", (email_clean, user_id))
+        if cursor.fetchone():
+            conn.close()
+            raise ValueError("Email already in use by another account.")
+        fields.append("email = ?")
+        vals.append(email_clean)
+    if fields:
+        vals.append(user_id)
+        query = f"UPDATE users SET {', '.join(fields)} WHERE user_id = ?;"
+        cursor.execute(query, tuple(vals))
+        conn.commit()
+    conn.close()
+    return get_user_profile(user_id)
+
+
 # ---------------------------------------------------------------------------
 # House CRUD
 # ---------------------------------------------------------------------------
@@ -287,6 +313,47 @@ def get_user_houses(user_id: str) -> list[dict]:
         }
         for r in rows
     ]
+
+
+def update_house(house_id: str, house_name: str = None, location: str = None) -> dict:
+    conn = get_db()
+    cursor = conn.cursor()
+    fields = []
+    vals = []
+    if house_name is not None and house_name.strip():
+        fields.append("house_name = ?")
+        vals.append(house_name.strip())
+    if location is not None:
+        fields.append("location = ?")
+        vals.append(location.strip())
+    if fields:
+        vals.append(house_id)
+        query = f"UPDATE houses SET {', '.join(fields)} WHERE house_id = ?;"
+        cursor.execute(query, tuple(vals))
+        conn.commit()
+    cursor.execute("SELECT * FROM houses WHERE house_id = ?;", (house_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return None
+    return {
+        "id": row["house_id"],
+        "house_id": row["house_id"],
+        "name": row["house_name"],
+        "location": row["location"],
+        "status": row["status"],
+        "dataStatus": "AVAILABLE",
+    }
+
+
+def delete_appliance(appliance_id: str) -> bool:
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM appliances WHERE appliance_id = ?;", (appliance_id,))
+    conn.commit()
+    deleted = cursor.rowcount > 0
+    conn.close()
+    return deleted
 
 
 # ---------------------------------------------------------------------------
