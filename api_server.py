@@ -17,7 +17,8 @@ import os
 import time
 import math
 import threading
-from datetime import datetime, timedelta
+import collections
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
 
@@ -734,44 +735,180 @@ def get_house():
     return jsonify(HOUSE)
 
 
-@app.route("/api/telemetry", methods=["GET"])
-def get_telemetry():
-    """Return current ApplianceRuntime[] with real model-driven data."""
-    user_id = get_auth_user_id()
-    with _lock:
-        if user_id:
-            houses = db.get_user_houses(user_id)
-            if houses:
-                user_apps = db.get_house_appliances(houses[0]["id"])
-                if user_apps:
-                    result = []
-                    now_ms = int(time.time() * 1000)
-                    for app_info in user_apps:
-                        aid = app_info["id"]
-                        state = _current_state.get(aid)
-                        if state:
-                            result.append(dict(state))
-                        else:
-                            atype = app_info.get("type", "generic").lower()
-                            base_id = atype if atype in APPLIANCE_IDS else "laptop"
-                            base_state = _current_state.get(base_id) or _make_default_state(base_id, now_ms)
-                            user_state = dict(base_state)
-                            user_state["id"] = aid
-                            user_state["name"] = app_info["name"]
-                            user_state["targetPowerW"] = app_info["ratedPowerW"]
-                            user_state["powerW"] = round(app_info["ratedPowerW"] * (0.65 + (hash(aid) % 40) / 100.0), 1)
-                            _current_state[aid] = user_state
-                            result.append(user_state)
-                    return jsonify(result)
+@app.route("/api/telemetry", methods=["GET", "POST"])
+def manage_telemetry():
+    """Manage telemetry: GET returns ApplianceRuntime[] for dashboard; POST ingests ESP32 device telemetry."""
+    if request.method == "POST":
+        # 1. Device Credential Extraction
+        dev_id = request.headers.get("X-Device-Id") or request.headers.get("Device-Id")
+        dev_secret = request.headers.get("X-Device-Secret") or request.headers.get("X-Device-Token") or request.headers.get("Device-Secret")
 
-        result = []
-        for aid in APPLIANCE_IDS:
-            state = _current_state.get(aid)
-            if state:
-                result.append(dict(state))
+        data = request.get_json(force=True, silent=True) or {}
+        if not dev_id:
+            dev_id = data.get("device_id")
+        if not dev_secret:
+            dev_secret = data.get("device_secret") or data.get("device_token")
+
+        if not dev_id or not dev_secret:
+            return jsonify({"ok": False, "error": "Device credentials required (X-Device-Id & X-Device-Secret headers)"}), 401
+
+        dev_record = db.get_device_by_credentials(dev_id, dev_secret)
+        if not dev_record:
+            return jsonify({"ok": False, "error": "Invalid device credentials"}), 401
+
+        if dev_record.get("status") == "DISABLED":
+            return jsonify({"ok": False, "error": "Device is disabled"}), 403
+
+        house_id = dev_record["house_id"]
+        user_id = dev_record["user_id"]
+
+        # 2. Extract & Validate Appliance
+        appliance_id = data.get("appliance_id") or data.get("id")
+        if not appliance_id:
+            return jsonify({"ok": False, "error": "appliance_id is required"}), 400
+
+        house_apps = db.get_house_appliances(house_id)
+        house_app_map = {a["id"]: a for a in house_apps}
+
+        if appliance_id not in house_app_map:
+            # Check if appliance exists anywhere in another house
+            conn = db.get_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT appliance_id, house_id FROM appliances WHERE appliance_id = ?;", (appliance_id,))
+            other_app = cursor.fetchone()
+            conn.close()
+
+            if not other_app:
+                return jsonify({"ok": False, "error": f"Appliance {appliance_id} not found"}), 404
             else:
-                result.append(_make_default_state(aid, int(time.time() * 1000)))
-        return jsonify(result)
+                return jsonify({"ok": False, "error": "Unauthorized device/appliance relationship (cross-house telemetry injection blocked)"}), 403
+
+        app_info = house_app_map[appliance_id]
+
+        # 3. Extract & Validate Reading Values
+        try:
+            voltage = float(data.get("voltage", 230.0))
+            current = float(data.get("current", 0.0))
+            power_w = float(data.get("power_w") if data.get("power_w") is not None else data.get("powerW", 0.0))
+            energy_kwh = float(data.get("energy_kwh") if data.get("energy_kwh") is not None else data.get("energyKwh", 0.0))
+            temperature = float(data.get("temperature", 25.0))
+            humidity = float(data.get("humidity", 50.0))
+            status_str = str(data.get("status", "ON")).upper()
+        except (ValueError, TypeError):
+            return jsonify({"ok": False, "error": "Malformed numeric telemetry values"}), 400
+
+        # 4. Anomaly Detection & ML Updates
+        atype = app_info.get("type", "generic").lower()
+        model_id = atype if atype in APPLIANCE_IDS else "laptop"
+        features = {
+            "power_w": power_w,
+            "status": 1 if status_str in ["ON", "1", "TRUE"] else 0,
+            "hour": datetime.now().hour,
+            "day_of_week": datetime.now().weekday(),
+            "is_weekend": 1 if datetime.now().weekday() >= 5 else 0,
+            "month": datetime.now().month,
+            "power_lag_1": power_w,
+            "power_lag_5": power_w,
+            "power_rolling_mean": power_w,
+            "power_rolling_max": power_w,
+        }
+        anomaly_score = _anomaly_score(model_id, features)
+
+        # 5. Persist to Database
+        db.save_telemetry(
+            user_id=user_id,
+            house_id=house_id,
+            appliance_id=appliance_id,
+            voltage=voltage,
+            current=current,
+            power_w=power_w,
+            energy_kwh=energy_kwh,
+            temperature=temperature,
+            humidity=humidity,
+            status=status_str,
+            anomaly_score=anomaly_score,
+        )
+
+        # 6. Update Real-Time Runtime State & Memory Buffers
+        now_ms = int(time.time() * 1000)
+        with _lock:
+            runtime_state = {
+                "id": appliance_id,
+                "name": app_info["name"],
+                "status": "on" if status_str in ["ON", "1", "TRUE"] else "off",
+                "mode": app_info.get("mode", "maintain"),
+                "powerW": power_w,
+                "targetPowerW": app_info.get("ratedPowerW", 100.0),
+                "tempC": temperature,
+                "humidityPct": humidity,
+                "voltageV": voltage,
+                "currentA": current,
+                "energyKwh": energy_kwh,
+                "anomalyScore": anomaly_score,
+                "isAnomaly": anomaly_score > 0.65,
+                "lastUpdate": now_ms,
+            }
+            _current_state[appliance_id] = runtime_state
+
+            if appliance_id not in _telemetry_buffers:
+                _telemetry_buffers[appliance_id] = collections.deque(maxlen=100)
+            _telemetry_buffers[appliance_id].append({
+                "t": now_ms,
+                "power_w": power_w,
+                "voltage": voltage,
+                "current": current,
+                "energy_kwh": energy_kwh,
+                "temperature": temperature,
+                "humidity": humidity,
+                "anomaly_score": anomaly_score,
+            })
+
+        return jsonify({
+            "ok": True,
+            "status": "accepted",
+            "device_id": dev_id,
+            "appliance_id": appliance_id,
+            "power_w": power_w,
+            "anomaly_score": anomaly_score,
+        }), 200
+
+    else:
+        # GET Telemetry dashboard polling logic
+        user_id = get_auth_user_id()
+        with _lock:
+            if user_id:
+                houses = db.get_user_houses(user_id)
+                if houses:
+                    user_apps = db.get_house_appliances(houses[0]["id"])
+                    if user_apps:
+                        result = []
+                        now_ms = int(time.time() * 1000)
+                        for app_info in user_apps:
+                            aid = app_info["id"]
+                            state = _current_state.get(aid)
+                            if state:
+                                result.append(dict(state))
+                            else:
+                                atype = app_info.get("type", "generic").lower()
+                                base_id = atype if atype in APPLIANCE_IDS else "laptop"
+                                base_state = _current_state.get(base_id) or _make_default_state(base_id, now_ms)
+                                user_state = dict(base_state)
+                                user_state["id"] = aid
+                                user_state["name"] = app_info["name"]
+                                user_state["targetPowerW"] = app_info["ratedPowerW"]
+                                user_state["powerW"] = round(app_info["ratedPowerW"] * (0.65 + (hash(aid) % 40) / 100.0), 1)
+                                _current_state[aid] = user_state
+                                result.append(user_state)
+                        return jsonify(result)
+
+            result = []
+            for aid in APPLIANCE_IDS:
+                state = _current_state.get(aid)
+                if state:
+                    result.append(dict(state))
+                else:
+                    result.append(_make_default_state(aid, int(time.time() * 1000)))
+            return jsonify(result)
 
 
 @app.route("/api/predictions", methods=["GET"])

@@ -137,11 +137,17 @@ def init_db():
         device_type TEXT NOT NULL,
         device_name TEXT,
         mac_address TEXT,
+        device_secret TEXT,
         status TEXT DEFAULT 'ONLINE',
         registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (house_id) REFERENCES houses(house_id) ON DELETE CASCADE
     );
     """)
+
+    try:
+        cursor.execute("ALTER TABLE devices ADD COLUMN device_secret TEXT;")
+    except Exception:
+        pass
 
     # 4. Appliances table
     cursor.execute("""
@@ -206,6 +212,10 @@ def generate_house_id() -> str:
 
 def generate_device_id() -> str:
     return "DEV-" + secrets.token_hex(4).upper()
+
+
+def generate_device_secret() -> str:
+    return "SEC-" + secrets.token_hex(6).upper()
 
 
 def generate_appliance_id() -> str:
@@ -367,9 +377,10 @@ def create_house(user_id: str, house_name: str, location: str) -> dict:
 
     # Seed primary hardware controller
     dev_id = generate_device_id()
+    dev_secret = generate_device_secret()
     cursor.execute(
-        "INSERT INTO devices (device_id, house_id, device_type, device_name, mac_address) VALUES (?, ?, ?, ?, ?);",
-        (dev_id, house_id, "ESP32", "Main Energy Controller", "A4:CF:12:89:BC:45"),
+        "INSERT INTO devices (device_id, house_id, device_type, device_name, mac_address, device_secret) VALUES (?, ?, ?, ?, ?, ?);",
+        (dev_id, house_id, "ESP32", "Main Energy Controller", "A4:CF:12:89:BC:45", dev_secret),
     )
 
     # Seed default appliances for new house
@@ -464,14 +475,15 @@ def delete_appliance(appliance_id: str) -> bool:
 # ---------------------------------------------------------------------------
 # Device CRUD
 # ---------------------------------------------------------------------------
-def create_device(house_id: str, device_type: str, device_name: str, mac_address: str = None) -> dict:
+def create_device(house_id: str, device_type: str, device_name: str, mac_address: str = None, device_secret: str = None) -> dict:
     conn = get_db()
     cursor = conn.cursor()
 
     device_id = generate_device_id()
+    secret = device_secret or generate_device_secret()
     cursor.execute(
-        "INSERT INTO devices (device_id, house_id, device_type, device_name, mac_address) VALUES (?, ?, ?, ?, ?);",
-        (device_id, house_id, device_type, device_name, mac_address),
+        "INSERT INTO devices (device_id, house_id, device_type, device_name, mac_address, device_secret) VALUES (?, ?, ?, ?, ?, ?);",
+        (device_id, house_id, device_type, device_name, mac_address, secret),
     )
     conn.commit()
     conn.close()
@@ -482,8 +494,35 @@ def create_device(house_id: str, device_type: str, device_name: str, mac_address
         "device_type": device_type,
         "device_name": device_name,
         "mac_address": mac_address,
+        "device_secret": secret,
         "status": "ONLINE",
     }
+
+
+def get_device(device_id: str) -> dict:
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM devices WHERE device_id = ?;", (device_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def get_device_by_credentials(device_id: str, device_secret: str) -> dict:
+    if not device_id or not device_secret:
+        return None
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT d.device_id, d.house_id, d.device_type, d.device_name, d.status, d.device_secret,
+               h.user_id, h.house_name
+        FROM devices d
+        JOIN houses h ON d.house_id = h.house_id
+        WHERE d.device_id = ? AND d.device_secret = ?;
+    """, (device_id.strip(), device_secret.strip()))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
 
 
 def get_house_devices(house_id: str) -> list[dict]:
@@ -615,6 +654,21 @@ def update_appliance_state(appliance_id: str, status: str = None, mode: str = No
     updated = cursor.rowcount > 0
     conn.close()
     return updated
+
+
+def save_telemetry(user_id: str, house_id: str, appliance_id: str, voltage: float = 230.0, current: float = 0.0, power_w: float = 0.0, energy_kwh: float = 0.0, temperature: float = 25.0, humidity: float = 50.0, status: str = "ON", anomaly_score: float = 0.05) -> bool:
+    """Save telemetry record to database."""
+    conn = get_db()
+    cursor = conn.cursor()
+    from datetime import timezone
+    now_ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S") if not IS_POSTGRES else datetime.now(timezone.utc)
+    cursor.execute("""
+        INSERT INTO telemetry (timestamp, user_id, house_id, appliance_id, voltage, current, power_w, energy_kwh, temperature, humidity, status, anomaly_score)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    """, (now_ts, user_id, house_id, appliance_id, voltage, current, power_w, energy_kwh, temperature, humidity, status, anomaly_score))
+    conn.commit()
+    conn.close()
+    return True
 
 
 # Initialize database upon module import
