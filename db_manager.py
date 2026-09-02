@@ -27,13 +27,76 @@ DB_PATH = BASE_DIR / "ceos_database.db"
 JWT_SECRET = os.environ.get("JWT_SECRET", "ceos-super-secret-key-2026-phase15-production-token")
 JWT_ALGORITHM = "HS256"
 
+DATABASE_URL = os.environ.get("DATABASE_URL")
+IS_POSTGRES = bool(DATABASE_URL)
+
+if IS_POSTGRES and DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+try:
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+except ImportError:
+    psycopg2 = None
+    RealDictCursor = None
+
+
+class DictCursorWrapper:
+    """Wrapper providing unified dict-like interface and placeholder translation for SQLite & PostgreSQL."""
+    def __init__(self, cursor, is_pg=False):
+        self.cursor = cursor
+        self.is_pg = is_pg
+        self.rowcount = cursor.rowcount
+
+    def execute(self, sql, params=()):
+        if self.is_pg:
+            formatted_sql = sql.replace("?", "%s")
+            self.cursor.execute(formatted_sql, params)
+        else:
+            self.cursor.execute(sql, params)
+        self.rowcount = self.cursor.rowcount
+        return self
+
+    def fetchone(self):
+        row = self.cursor.fetchone()
+        if row is None:
+            return None
+        return dict(row)
+
+    def fetchall(self):
+        rows = self.cursor.fetchall()
+        return [dict(r) for r in rows]
+
+
+class DBConnWrapper:
+    """Database connection wrapper compatible with SQLite & PostgreSQL."""
+    def __init__(self, conn, is_pg=False):
+        self.conn = conn
+        self.is_pg = is_pg
+
+    def cursor(self):
+        if self.is_pg:
+            return DictCursorWrapper(self.conn.cursor(cursor_factory=RealDictCursor), is_pg=True)
+        else:
+            return DictCursorWrapper(self.conn.cursor(), is_pg=False)
+
+    def commit(self):
+        self.conn.commit()
+
+    def close(self):
+        self.conn.close()
+
 
 def get_db():
-    """Get a thread-safe connection to the SQLite database."""
-    conn = sqlite3.connect(DB_PATH, timeout=20.0)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON;")
-    return conn
+    """Get a connection to PostgreSQL (when DATABASE_URL is set) or local SQLite."""
+    if IS_POSTGRES and psycopg2:
+        conn = psycopg2.connect(DATABASE_URL)
+        return DBConnWrapper(conn, is_pg=True)
+    else:
+        conn = sqlite3.connect(DB_PATH, timeout=20.0)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON;")
+        return DBConnWrapper(conn, is_pg=False)
 
 
 def init_db():
@@ -98,10 +161,11 @@ def init_db():
     """)
 
     # 5. Telemetry table
-    cursor.execute("""
+    telemetry_pk = "telemetry_id SERIAL PRIMARY KEY" if IS_POSTGRES else "telemetry_id INTEGER PRIMARY KEY AUTOINCREMENT"
+    cursor.execute(f"""
     CREATE TABLE IF NOT EXISTS telemetry (
-        telemetry_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        timestamp DATETIME NOT NULL,
+        {telemetry_pk},
+        timestamp TIMESTAMP NOT NULL,
         user_id TEXT NOT NULL,
         house_id TEXT NOT NULL,
         appliance_id TEXT NOT NULL,

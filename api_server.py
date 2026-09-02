@@ -1155,9 +1155,11 @@ def get_history():
 
 @app.route("/api/health", methods=["GET"])
 def health():
-    """Simple health check."""
+    """Simple health check returning models, db engine, and replay tick status."""
+    db_engine = "PostgreSQL" if db.IS_POSTGRES else "SQLite"
     return jsonify({
         "status": "ok",
+        "db_engine": db_engine,
         "models_loaded": {
             "energy": len(energy_models),
             "status": len(status_classifiers),
