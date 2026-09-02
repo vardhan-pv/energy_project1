@@ -601,17 +601,26 @@ def manage_houses():
     user_id = get_auth_user_id()
     if not user_id:
         return jsonify({"ok": False, "error": "Unauthorized"}), 401
-    if request.method == "POST":
-        data = request.get_json(force=True, silent=True) or {}
-        house_name = data.get("house_name") or data.get("name")
-        location = data.get("location", "Home")
-        if not house_name:
-            return jsonify({"ok": False, "error": "House name required"}), 400
-        house = db.create_house(user_id, house_name, location)
-        return jsonify({"ok": True, "house": house})
-    else:
-        houses = db.get_user_houses(user_id)
-        return jsonify(houses)
+    try:
+        if request.method == "POST":
+            data = request.get_json(force=True, silent=True) or {}
+            house_name = data.get("house_name") or data.get("name")
+            location = data.get("location", "Home")
+            if not house_name:
+                return jsonify({"ok": False, "error": "House name required"}), 400
+
+            existing = db.get_user_houses(user_id)
+            if existing:
+                updated = db.update_house(existing[0]["id"], house_name, location)
+                return jsonify({"ok": True, "house": updated})
+
+            house = db.create_house(user_id, house_name, location)
+            return jsonify({"ok": True, "house": house})
+        else:
+            houses = db.get_user_houses(user_id)
+            return jsonify(houses)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 @app.route("/api/houses/<house_id>", methods=["PUT"])
