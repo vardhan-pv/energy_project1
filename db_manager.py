@@ -193,6 +193,11 @@ def register_user(name: str, email: str, password: str) -> dict:
     conn.close()
 
     token = create_token(user_id)
+    # Automatically create user's initial digital house & appliances
+    try:
+        create_house(user_id, f"{name.strip()}'s Digital House", "Bengaluru, India")
+    except Exception:
+        pass
     return {"user_id": user_id, "name": name.strip(), "email": email_clean, "token": token}
 
 
@@ -286,7 +291,7 @@ def update_user_profile(user_id: str, name: str = None, email: str = None) -> di
 # House CRUD
 # ---------------------------------------------------------------------------
 def create_house(user_id: str, house_name: str, location: str) -> dict:
-    """Create a digital house associated with the authenticated user."""
+    """Create a digital house associated with the authenticated user with initial device and appliances."""
     conn = get_db()
     cursor = conn.cursor()
 
@@ -295,13 +300,37 @@ def create_house(user_id: str, house_name: str, location: str) -> dict:
         "INSERT INTO houses (house_id, user_id, house_name, location) VALUES (?, ?, ?, ?);",
         (house_id, user_id, house_name.strip(), location.strip()),
     )
+
+    # Seed primary hardware controller
+    dev_id = generate_device_id()
+    cursor.execute(
+        "INSERT INTO devices (device_id, house_id, device_type, device_name, mac_address) VALUES (?, ?, ?, ?, ?);",
+        (dev_id, house_id, "ESP32", "Main Energy Controller", "A4:CF:12:89:BC:45"),
+    )
+
+    # Seed default appliances for new house
+    default_apps = [
+        ("Refrigerator", "fridge", 150.0),
+        ("Kitchen Lighting", "kitchen_lights", 60.0),
+        ("Office Fan", "office_fan", 45.0),
+        ("Workstation Laptop", "laptop", 85.0),
+    ]
+    for app_name, app_type, rated_w in default_apps:
+        app_id = generate_appliance_id()
+        cursor.execute(
+            "INSERT INTO appliances (appliance_id, house_id, device_id, appliance_name, appliance_type, rated_power_w) VALUES (?, ?, ?, ?, ?, ?);",
+            (app_id, house_id, dev_id, app_name, app_type, rated_w),
+        )
+
     conn.commit()
     conn.close()
 
     return {
+        "id": house_id,
         "house_id": house_id,
         "user_id": user_id,
         "house_name": house_name.strip(),
+        "name": house_name.strip(),
         "location": location.strip(),
         "status": "ONLINE",
         "dataStatus": "AVAILABLE",
