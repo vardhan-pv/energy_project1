@@ -330,7 +330,23 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
       if (savedToken && savedUser) {
         setToken(savedToken);
         try {
-          setUser(JSON.parse(savedUser));
+          const parsedUser = JSON.parse(savedUser);
+          setUser(parsedUser);
+          // Validate token with backend
+          const ds = createHttpDataSource(settings.apiBaseUrl, () => savedToken);
+          ds.getCurrentUser().then((res) => {
+            if (res && res.ok && res.user) {
+              setUser(res.user);
+            } else {
+              // Stale token, clear it
+              setToken(null);
+              setUser(null);
+              window.localStorage.removeItem("ceos.token");
+              window.localStorage.removeItem("ceos.user");
+            }
+          }).catch(() => {
+            // Backend unavailable or token invalid
+          });
         } catch {
           // ignore
         }

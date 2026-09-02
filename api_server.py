@@ -511,7 +511,9 @@ def get_auth_user_id():
         token = auth_header.split(" ")[1]
         decoded = db.decode_token(token)
         if decoded:
-            return decoded.get("user_id")
+            uid = decoded.get("user_id")
+            if uid and db.user_exists(uid):
+                return uid
     return None
 
 

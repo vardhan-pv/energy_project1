@@ -222,6 +222,18 @@ def authenticate_user(identifier: str, password: str) -> dict:
     }
 
 
+def user_exists(user_id: str) -> bool:
+    """Check if user_id exists in users table."""
+    if not user_id:
+        return False
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT 1 FROM users WHERE user_id = ?;", (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return row is not None
+
+
 def get_user_profile(user_id: str) -> dict:
     """Retrieve user details and associated digital house/devices."""
     conn = get_db()
