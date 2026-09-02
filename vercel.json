@@ -1,0 +1,5 @@
+{
+  "buildCommand": "npm run build --workspace=dashboard",
+  "outputDirectory": "dashboard/.output/public",
+  "framework": "vite"
+}
