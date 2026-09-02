@@ -30,10 +30,15 @@ class TestPhase15MultiUser(unittest.TestCase):
     def test_multiuser_lifecycle_and_isolation(self):
         print("\n--- Running Test: Multi-User Registration & Data Isolation ---")
 
+        import uuid
+        unique_suffix = uuid.uuid4().hex[:6]
+        email_a = f"alpha_{unique_suffix}@example.com"
+        email_b = f"beta_{unique_suffix}@example.com"
+
         # 1. Register User A
         res_a = self.app.post("/api/auth/register", json={
             "name": "User Alpha",
-            "email": "alpha@example.com",
+            "email": email_a,
             "password": "Password123!"
         })
         self.assertEqual(res_a.status_code, 200)
@@ -46,7 +51,7 @@ class TestPhase15MultiUser(unittest.TestCase):
         # 2. Register User B
         res_b = self.app.post("/api/auth/register", json={
             "name": "User Beta",
-            "email": "beta@example.com",
+            "email": email_b,
             "password": "Password456!"
         })
         self.assertEqual(res_b.status_code, 200)
@@ -59,7 +64,7 @@ class TestPhase15MultiUser(unittest.TestCase):
         # 3. Test duplicate email rejection
         res_dup = self.app.post("/api/auth/register", json={
             "name": "Duplicate User",
-            "email": "alpha@example.com",
+            "email": email_a,
             "password": "Password789!"
         })
         self.assertEqual(res_dup.status_code, 409)

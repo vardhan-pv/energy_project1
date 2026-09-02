@@ -151,10 +151,12 @@ def generate_appliance_id() -> str:
 # ---------------------------------------------------------------------------
 # JWT Token Helpers
 # ---------------------------------------------------------------------------
+from datetime import datetime, timezone
+
 def create_token(user_id: str) -> str:
     payload = {
         "user_id": user_id,
-        "iat": datetime.utcnow(),
+        "iat": datetime.now(timezone.utc),
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
