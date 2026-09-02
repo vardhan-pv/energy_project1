@@ -23,10 +23,12 @@ import type {
   ActivityEvent,
   AlertItem,
   ApplianceId,
+  ApplianceProfile,
   ApplianceRuntime,
   ControlLoopState,
   ControlMode,
   EventSeverity,
+  House,
   Prediction,
   Settings,
   SystemSnapshot,
@@ -45,26 +47,38 @@ export const DEFAULT_SETTINGS: Settings = {
   budgetKwhPerDay: 3.2,
   notifications: true,
   reduceMotion: false,
-  apiBaseUrl: "http://localhost:5000",
-  useLiveApi: false,
+  apiBaseUrl: "https://energy-project1.onrender.com",
+  useLiveApi: true,
+};
+
+const DEFAULT_SIMULATED_HOUSE: House = {
+  id: "HOUSE_SIMULATED",
+  name: "Simulated Home",
+  location: "Local Simulation",
+  status: "ONLINE",
+  dataStatus: "AVAILABLE",
 };
 
 interface EngineState {
   ready: boolean;
   now: number;
   tick: number;
-  runtimes: Record<ApplianceId, ApplianceRuntime>;
+  house: House | null;
+  appliances: ApplianceProfile[];
+  runtimes: Record<string, ApplianceRuntime>;
   events: ActivityEvent[];
   alerts: AlertItem[];
-  loops: Record<ApplianceId, ControlLoopState>;
-  faults: Partial<Record<ApplianceId, boolean>>;
+  loops: Record<string, ControlLoopState>;
+  faults: Partial<Record<string, boolean>>;
   baselineKwh: number;
 }
 
 interface EnergyContextValue extends EngineState {
+  house: House | null;
+  appliances: ApplianceProfile[];
   settings: Settings;
   snapshot: SystemSnapshot;
-  predictions: Record<ApplianceId, Prediction>;
+  predictions: Record<string, Prediction>;
   horizonMinutes: number;
   connected: boolean;
   setHorizonMinutes: (m: number) => void;
@@ -101,7 +115,7 @@ function makeEvent(
 }
 
 function initialState(now: number, settings: Settings): EngineState {
-  const runtimes = {} as Record<ApplianceId, ApplianceRuntime>;
+  const runtimes = {} as Record<string, ApplianceRuntime>;
   for (const p of APPLIANCES) {
     const status: ApplianceRuntime["status"] =
       p.id === "fridge" ? "on" : p.id === "kitchen_lights" ? "on" : p.id === "laptop" ? "on" : "on";
@@ -126,7 +140,7 @@ function initialState(now: number, settings: Settings): EngineState {
     };
   }
 
-  const loops = {} as Record<ApplianceId, ControlLoopState>;
+  const loops = {} as Record<string, ControlLoopState>;
   for (const p of APPLIANCES) loops[p.id] = controlLoop(runtimes[p.id], 1, settings.safetyInterlocks);
 
   const events: ActivityEvent[] = [
@@ -152,6 +166,8 @@ function initialState(now: number, settings: Settings): EngineState {
     ready: true,
     now,
     tick: Math.floor(now / settings.refreshMs),
+    house: DEFAULT_SIMULATED_HOUSE,
+    appliances: APPLIANCES,
     runtimes,
     events,
     alerts: [],
@@ -161,11 +177,34 @@ function initialState(now: number, settings: Settings): EngineState {
   };
 }
 
+function initialLivePendingState(): EngineState {
+  return {
+    ready: false,
+    now: Date.now(),
+    tick: 0,
+    house: null,
+    appliances: [],
+    runtimes: {},
+    events: [
+      makeEvent(Date.now(), "info", "Connecting to Live API", "Fetching house metadata and live telemetry...", "system"),
+    ],
+    alerts: [],
+    loops: {},
+    faults: {},
+    baselineKwh: 0,
+  };
+}
+
 function loadSettings(): Settings {
   if (typeof window === "undefined") return DEFAULT_SETTINGS;
   try {
     const raw = window.localStorage.getItem("ceos.settings");
-    return raw ? { ...DEFAULT_SETTINGS, ...(JSON.parse(raw) as Partial<Settings>) } : DEFAULT_SETTINGS;
+    if (!raw) return DEFAULT_SETTINGS;
+    const parsed = JSON.parse(raw) as Partial<Settings>;
+    if (parsed.apiBaseUrl === "http://localhost:5000" || parsed.apiBaseUrl === "http://localhost:5001") {
+      parsed.apiBaseUrl = "https://energy-project1.onrender.com";
+    }
+    return { ...DEFAULT_SETTINGS, ...parsed };
   } catch {
     return DEFAULT_SETTINGS;
   }
@@ -181,33 +220,37 @@ async function pollLiveApi(
   settings: Settings,
 ): Promise<Partial<EngineState> | null> {
   try {
-    const [telemetry, controlLoopData, alertsData] = await Promise.all([
+    const housePromise = ds.getHouse();
+    const appliancesPromise = ds.listAppliances();
+    const [houseData, appliancesData, telemetry, controlLoopData, alertsData] = await Promise.all([
+      housePromise,
+      appliancesPromise,
       ds.getTelemetry(),
       ds.getControlLoop(),
       ds.getAlerts(),
     ]);
 
     const now = Date.now();
-    const runtimes = {} as Record<ApplianceId, ApplianceRuntime>;
-    const loops = {} as Record<ApplianceId, ControlLoopState>;
+    const runtimes = { ...(prev?.runtimes ?? {}) };
+    const loops = { ...(prev?.loops ?? {}) };
 
     for (const rt of telemetry) {
-      const id = rt.id as ApplianceId;
+      const id = rt.id;
       // Merge history: keep previous history and append new sample
       const prevHistory = prev?.runtimes?.[id]?.history ?? [];
       const sample = {
         t: now,
-        powerW: rt.powerW,
-        energyKwh: rt.energyTodayKwh,
+        powerW: rt.powerW ?? 0,
+        energyKwh: rt.energyTodayKwh ?? 0,
         temperatureC: rt.temperatureC,
-        status: rt.status,
+        status: rt.status ?? "off",
       };
       const history = [...prevHistory, sample].slice(-HISTORY_POINTS);
       runtimes[id] = { ...rt, history, lastSeen: now };
     }
 
     for (const cl of controlLoopData) {
-      loops[cl.id as ApplianceId] = cl;
+      loops[cl.id] = cl;
     }
 
     // Build events from alerts
@@ -233,8 +276,8 @@ async function pollLiveApi(
     const tick = (prev?.tick ?? 0) + 1;
 
     // Add periodic telemetry event
-    if (tick % 10 === 0) {
-      const total = Object.values(runtimes).reduce((s, r) => s + r.powerW, 0);
+    if (tick % 10 === 0 && Object.keys(runtimes).length > 0) {
+      const total = Object.values(runtimes).reduce((s, r) => s + (r.powerW ?? 0), 0);
       newEvents.push(
         makeEvent(
           now,
@@ -250,6 +293,8 @@ async function pollLiveApi(
       ready: true,
       now,
       tick,
+      house: houseData,
+      appliances: appliancesData,
       runtimes,
       events: [...newEvents, ...(prev?.events ?? [])].slice(0, MAX_EVENTS),
       alerts: alertsData,
@@ -275,7 +320,11 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const s = loadSettings();
     setSettings(s);
-    setState(initialState(Date.now(), s));
+    if (s.useLiveApi) {
+      setState(initialLivePendingState());
+    } else {
+      setState(initialState(Date.now(), s));
+    }
   }, []);
 
   useEffect(() => {
@@ -283,9 +332,19 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
     window.localStorage.setItem("ceos.settings", JSON.stringify(settings));
   }, [settings]);
 
+  // Sync state mode if useLiveApi setting changes
+  useEffect(() => {
+    if (!state) return;
+    if (settings.useLiveApi && state.house?.id === "HOUSE_SIMULATED") {
+      setState(initialLivePendingState());
+    } else if (!settings.useLiveApi && state.house?.id !== "HOUSE_SIMULATED") {
+      setState(initialState(Date.now(), settings));
+    }
+  }, [settings.useLiveApi]);
+
   // ---- Live API polling loop -----------------------------------------------
   useEffect(() => {
-    if (!state?.ready || !settings.useLiveApi) {
+    if (!settings.useLiveApi) {
       setApiConnected(false);
       return;
     }
@@ -293,30 +352,43 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
     const ds = createHttpDataSource(settings.apiBaseUrl);
     let cancelled = false;
 
-    // Initial connection event
-    setState((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        events: [
-          makeEvent(Date.now(), "success", "Live API connected", `Polling ${settings.apiBaseUrl} for real model data.`, "system"),
-          ...prev.events,
-        ].slice(0, MAX_EVENTS),
-      };
-    });
-
     const poll = async () => {
       if (cancelled) return;
-      const result = await pollLiveApi(ds, horizonMinutes, state, settingsRef.current);
+      let currentDs = ds;
+      let result = await pollLiveApi(currentDs, horizonMinutes, state, settingsRef.current);
+      
+      // Auto fallback between port 5000 and 5001 if primary URL is localhost and failed
+      if (!result && settingsRef.current.apiBaseUrl.includes("localhost")) {
+        const altUrl = settingsRef.current.apiBaseUrl.includes("5000")
+          ? "http://localhost:5001"
+          : "http://localhost:5000";
+        const altDs = createHttpDataSource(altUrl);
+        const altResult = await pollLiveApi(altDs, horizonMinutes, state, settingsRef.current);
+        if (altResult) {
+          result = altResult;
+          updateSettings({ apiBaseUrl: altUrl });
+        }
+      }
+
       if (cancelled) return;
       if (result) {
-        setState((prev) => (prev ? { ...prev, ...result } : prev));
+        setState((prev) => {
+          if (!prev) return result as EngineState;
+          const cleanedEvents = prev.events.filter((e) => e.title !== "API connection lost");
+          return {
+            ...prev,
+            ...result,
+            events: [...(result.events ?? []), ...cleanedEvents].slice(0, MAX_EVENTS),
+          };
+        });
         setApiConnected(true);
       } else {
         setApiConnected(false);
-        // Push a warning event
         setState((prev) => {
           if (!prev) return prev;
+          // Avoid flooding the stream with duplicate retry warnings
+          const hasRecentWarning = prev.events[0]?.title === "API connection lost";
+          if (hasRecentWarning) return prev;
           return {
             ...prev,
             events: [
@@ -335,7 +407,7 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [state?.ready, settings.useLiveApi, settings.apiBaseUrl, settings.refreshMs]);
+  }, [settings.useLiveApi, settings.apiBaseUrl, settings.refreshMs]);
 
   // ---- Simulation loop (only when NOT using live API) -----------------------
   useEffect(() => {
@@ -353,6 +425,7 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
 
         for (const profile of APPLIANCES) {
           const prevRt = prev.runtimes[profile.id];
+          if (!prevRt) continue;
           const faultActive = !!prev.faults[profile.id];
           const r = simulateTick({
             profile,
@@ -384,7 +457,7 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
             history,
           };
           runtimes[profile.id] = next;
-          loops[profile.id] = controlLoop(next, prev.loops[profile.id].iterations + 1, cfg.safetyInterlocks);
+          loops[profile.id] = controlLoop(next, prev.loops[profile.id]?.iterations ? prev.loops[profile.id].iterations + 1 : 1, cfg.safetyInterlocks);
 
           if (prevRt.risk !== "risk" && r.risk === "risk") {
             newAlerts.push({
@@ -424,7 +497,7 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
         }
 
         if (tick % 10 === 0) {
-          const total = APPLIANCES.reduce((s, p) => s + runtimes[p.id].powerW, 0);
+          const total = APPLIANCES.reduce((s, p) => s + (runtimes[p.id]?.powerW ?? 0), 0);
           newEvents.push(
             makeEvent(
               now,
@@ -461,9 +534,31 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const getApplianceProfile = useCallback(
+    (id: string): ApplianceProfile => {
+      if (APPLIANCE_MAP[id as ApplianceId]) return APPLIANCE_MAP[id as ApplianceId];
+      const found = state?.appliances.find((a) => a.id === id);
+      if (found) return found;
+      return {
+        id: id as ApplianceId,
+        name: id,
+        room: "Home",
+        icon: "laptop",
+        ratedPowerW: 50,
+        minPowerW: 0,
+        maxPowerW: 100,
+        criticalAlwaysOn: false,
+        hasTemperature: false,
+        description: "Appliance",
+        model: { name: "Model", version: "v1.0", trainedOn: "Data", accuracyPct: 90 },
+      };
+    },
+    [state?.appliances],
+  );
+
   // ---- Control actions (work for both simulated and live API) ---------------
   const liveControl = useCallback(
-    async (input: { id: ApplianceId; action: string; on?: boolean; mode?: ControlMode; targetW?: number }) => {
+    async (input: { id: string; action: string; on?: boolean; mode?: ControlMode; targetW?: number }) => {
       if (!settingsRef.current.useLiveApi) return;
       try {
         const ds = createHttpDataSource(settingsRef.current.apiBaseUrl);
@@ -477,7 +572,7 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
 
   const setPower = useCallback(
     (id: ApplianceId, on: boolean) => {
-      const profile = APPLIANCE_MAP[id];
+      const profile = getApplianceProfile(id);
       if (!on && profile.criticalAlwaysOn) {
         pushEvent("warning", `${profile.name} cannot be switched off`, "Safety interlock: this appliance must stay powered.", "safety", id);
         return;
@@ -490,31 +585,31 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
           ...prev,
           runtimes: {
             ...prev.runtimes,
-            [id]: { ...rt, status, powerW: on ? rt.powerW : 0, targetPowerW: targetPowerW(profile, rt.mode, status) },
+            [id]: { ...rt, status, powerW: on ? (rt?.powerW ?? 0) : 0, targetPowerW: targetPowerW(profile, rt?.mode ?? "maintain", status) },
           },
         };
       });
       pushEvent(on ? "success" : "info", `${profile.name} turned ${on ? "on" : "off"}`, "Command accepted by the controller.", "user", id);
       liveControl({ id, action: "power", on });
     },
-    [pushEvent, liveControl],
+    [pushEvent, liveControl, getApplianceProfile],
   );
 
   const setMode = useCallback(
     (id: ApplianceId, mode: ControlMode) => {
-      const profile = APPLIANCE_MAP[id];
+      const profile = getApplianceProfile(id);
       setState((prev) => {
         if (!prev) return prev;
         const rt = prev.runtimes[id];
         return {
           ...prev,
-          runtimes: { ...prev.runtimes, [id]: { ...rt, mode, targetPowerW: targetPowerW(profile, mode, rt.status) } },
+          runtimes: { ...prev.runtimes, [id]: { ...rt, mode, targetPowerW: targetPowerW(profile, mode, rt?.status ?? "on") } },
         };
       });
       pushEvent("success", `${profile.name} set to ${mode}`, "Control policy updated and applied.", "user", id);
       liveControl({ id, action: "mode", mode });
     },
-    [pushEvent, liveControl],
+    [pushEvent, liveControl, getApplianceProfile],
   );
 
   const setTarget = useCallback(
@@ -541,14 +636,19 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
 
   const injectFault = useCallback(
     (id: ApplianceId) => {
+      const profile = getApplianceProfile(id);
       setState((prev) => (prev ? { ...prev, faults: { ...prev.faults, [id]: !prev.faults[id] } } : prev));
-      pushEvent("warning", `Demo fault toggled on ${APPLIANCE_MAP[id].name}`, "Simulated abnormal draw for testing alerts.", "system", id);
+      pushEvent("warning", `Demo fault toggled on ${profile.name}`, "Simulated abnormal draw for testing alerts.", "system", id);
     },
-    [pushEvent],
+    [pushEvent, getApplianceProfile],
   );
 
   const resetDemo = useCallback(() => {
-    setState(initialState(Date.now(), settingsRef.current));
+    if (settingsRef.current.useLiveApi) {
+      setState(initialLivePendingState());
+    } else {
+      setState(initialState(Date.now(), settingsRef.current));
+    }
   }, []);
 
   const updateSettings = useCallback((patch: Partial<Settings>) => {
@@ -556,10 +656,10 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // ---- Predictions (simulation mode uses local predict, live mode polls API)
-  const [livePredictions, setLivePredictions] = useState<Record<ApplianceId, Prediction> | null>(null);
+  const [livePredictions, setLivePredictions] = useState<Record<string, Prediction> | null>(null);
 
   useEffect(() => {
-    if (!state?.ready || !settings.useLiveApi) {
+    if (!settings.useLiveApi) {
       setLivePredictions(null);
       return;
     }
@@ -570,8 +670,8 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
       try {
         const preds = await ds.getPredictions(horizonMinutes);
         if (cancelled) return;
-        const map = {} as Record<ApplianceId, Prediction>;
-        for (const p of preds) map[p.id as ApplianceId] = p;
+        const map = {} as Record<string, Prediction>;
+        for (const p of preds) map[p.id] = p;
         setLivePredictions(map);
       } catch (err) {
         console.error("[live-api] Predictions fetch failed:", err);
@@ -584,15 +684,19 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [state?.ready, settings.useLiveApi, settings.apiBaseUrl, horizonMinutes]);
+  }, [settings.useLiveApi, settings.apiBaseUrl, horizonMinutes]);
 
   const simPredictions = useMemo(() => {
-    const out = {} as Record<ApplianceId, Prediction>;
+    const out = {} as Record<string, Prediction>;
     if (!state) return out;
-    for (const p of APPLIANCES) out[p.id] = predict(state.runtimes[p.id], horizonMinutes, state.now);
+    const currentAppliances = state.appliances.length > 0 ? state.appliances : APPLIANCES;
+    for (const p of currentAppliances) {
+      if (state.runtimes[p.id]) {
+        out[p.id] = predict(state.runtimes[p.id], horizonMinutes, state.now);
+      }
+    }
     return out;
-    // Recompute a few times a minute rather than every tick.
-  }, [state?.tick ? Math.floor(state.tick / 3) : 0, horizonMinutes, state?.runtimes]);
+  }, [state?.tick ? Math.floor(state.tick / 3) : 0, horizonMinutes, state?.runtimes, state?.appliances]);
 
   const predictions = livePredictions ?? simPredictions;
 
@@ -600,7 +704,7 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
   const [liveHistory, setLiveHistory] = useState<ReturnType<typeof dailyHistory> | null>(null);
 
   useEffect(() => {
-    if (!state?.ready || !settings.useLiveApi) {
+    if (!settings.useLiveApi) {
       setLiveHistory(null);
       return;
     }
@@ -618,13 +722,12 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
     };
 
     fetchHistory();
-    // History doesn't change often, refresh every 60 seconds
     const interval = window.setInterval(fetchHistory, 60000);
     return () => {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [state?.ready, settings.useLiveApi, settings.apiBaseUrl]);
+  }, [settings.useLiveApi, settings.apiBaseUrl]);
 
   const simHistory = useMemo(() => dailyHistory(30, state?.now ?? Date.now()), [state?.ready]);
   const history = liveHistory ?? simHistory;
@@ -642,11 +745,12 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
         safety: "safe",
       };
     }
-    const totalPowerW = APPLIANCES.reduce((s, p) => s + state.runtimes[p.id].powerW, 0);
-    const energyTodayKwh = APPLIANCES.reduce((s, p) => s + state.runtimes[p.id].energyTodayKwh, 0);
+    const currentAppliances = state.appliances.length > 0 ? state.appliances : APPLIANCES;
+    const totalPowerW = currentAppliances.reduce((s, p) => s + (state.runtimes[p.id]?.powerW ?? 0), 0);
+    const energyTodayKwh = currentAppliances.reduce((s, p) => s + (state.runtimes[p.id]?.energyTodayKwh ?? 0), 0);
     const savingsKwh = energyTodayKwh * (settings.ecoTargetPct / 100) * (settings.autopilot ? 1 : 0.35);
-    const risky = APPLIANCES.some((p) => state.runtimes[p.id].risk === "risk");
-    const watch = APPLIANCES.some((p) => state.runtimes[p.id].risk === "watch");
+    const risky = currentAppliances.some((p) => state.runtimes[p.id]?.risk === "risk");
+    const watch = currentAppliances.some((p) => state.runtimes[p.id]?.risk === "watch");
     return {
       t: state.now,
       totalPowerW: Math.round(totalPowerW * 10) / 10,
@@ -663,10 +767,12 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
     ready: !!state?.ready,
     now: state?.now ?? 0,
     tick: state?.tick ?? 0,
-    runtimes: state?.runtimes ?? ({} as Record<ApplianceId, ApplianceRuntime>),
+    house: state?.house ?? null,
+    appliances: state?.appliances ?? APPLIANCES,
+    runtimes: state?.runtimes ?? ({} as Record<string, ApplianceRuntime>),
     events: state?.events ?? [],
     alerts: state?.alerts ?? [],
-    loops: state?.loops ?? ({} as Record<ApplianceId, ControlLoopState>),
+    loops: state?.loops ?? ({} as Record<string, ControlLoopState>),
     faults: state?.faults ?? {},
     baselineKwh: state?.baselineKwh ?? 0,
     settings,

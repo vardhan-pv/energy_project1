@@ -408,13 +408,28 @@ def replay_tick():
             temp = _estimate_temperature(aid, power, profile)
             target_w = override.get("targetW", profile["ratedPowerW"])
 
+            # Predict status using trained status classifier model if available
+            status_clf = status_classifiers.get(aid)
+            if forced_off:
+                status_str = "off"
+            elif status_clf is not None:
+                try:
+                    status_cols = ['power_w', 'hour', 'day_of_week', 'is_weekend', 'month', 'power_lag_1', 'power_lag_5', 'power_rolling_mean', 'power_rolling_max']
+                    X_status = pd.DataFrame([{col: features.get(col, 0) for col in status_cols}])
+                    pred_status = status_clf.predict(X_status)[0]
+                    status_str = "on" if int(pred_status) == 1 else "off"
+                except Exception:
+                    status_str = "on" if int(row.get("status", 1)) == 1 else "off"
+            else:
+                status_str = "on" if int(row.get("status", 1)) == 1 else "off"
+
             # Build telemetry sample
             sample = {
                 "t": now_ms,
                 "powerW": power,
                 "energyKwh": energy_today,
                 "temperatureC": temp,
-                "status": "off" if forced_off else ("on" if int(row.get("status", 1)) == 1 else "off"),
+                "status": status_str,
             }
 
             # Update history buffer
@@ -424,7 +439,6 @@ def replay_tick():
                 _telemetry_buffers[aid] = buf[-HISTORY_BUFFER_SIZE:]
 
             # Update current state
-            status_str = "off" if forced_off else ("on" if int(row.get("status", 1)) == 1 else "off")
             _current_state[aid] = {
                 "id": aid,
                 "status": status_str,
@@ -477,8 +491,21 @@ def _replay_loop():
 # Flask app
 # ---------------------------------------------------------------------------
 app = Flask(__name__)
-CORS(app, origins=["http://localhost:8080", "http://127.0.0.1:8080",
-                    "http://localhost:5173", "http://127.0.0.1:5173"])
+CORS(app, resources={r"/api/*": {"origins": "*"}})
+
+
+HOUSE = {
+    "id": "HOUSE_87B7EB2B",
+    "name": "rama nilaya",
+    "location": "Bengaluru, Karnataka, India",
+    "status": "ONLINE",
+    "dataStatus": "AVAILABLE",
+}
+
+
+@app.route("/api/house", methods=["GET"])
+def get_house():
+    return jsonify(HOUSE)
 
 
 @app.route("/api/appliances", methods=["GET"])
@@ -619,34 +646,38 @@ def get_predictions():
 @app.route("/api/control", methods=["POST"])
 def post_control():
     """Accept control commands from the dashboard UI."""
-    data = request.get_json(force=True)
-    aid = data.get("id")
-    action = data.get("action")
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        aid = data.get("id")
+        action = data.get("action")
 
-    if aid not in APPLIANCE_IDS:
-        return jsonify({"ok": False, "error": "Unknown appliance"}), 400
+        if aid not in APPLIANCE_IDS:
+            return jsonify({"ok": False, "error": "Unknown appliance"}), 400
 
-    with _lock:
-        override = _control_overrides.get(aid, {})
+        with _lock:
+            override = _control_overrides.get(aid, {})
 
-        if action == "power":
-            on = data.get("on", True)
-            override["status"] = "on" if on else "off"
-            print(f"[control] {aid} power → {'on' if on else 'off'}")
+            if action == "power":
+                on = data.get("on", True)
+                override["status"] = "on" if on else "off"
+                print(f"[control] {aid} power -> {'on' if on else 'off'}")
 
-        elif action == "mode":
-            mode = data.get("mode", "maintain")
-            override["mode"] = mode
-            print(f"[control] {aid} mode → {mode}")
+            elif action == "mode":
+                mode = data.get("mode", "maintain")
+                override["mode"] = mode
+                print(f"[control] {aid} mode -> {mode}")
 
-        elif action == "target":
-            target_w = data.get("targetW", APPLIANCE_PROFILES[aid]["ratedPowerW"])
-            override["targetW"] = target_w
-            print(f"[control] {aid} target → {target_w} W")
+            elif action == "target":
+                target_w = data.get("targetW", APPLIANCE_PROFILES[aid]["ratedPowerW"])
+                override["targetW"] = target_w
+                print(f"[control] {aid} target -> {target_w} W")
 
-        _control_overrides[aid] = override
+            _control_overrides[aid] = override
 
-    return jsonify({"ok": True})
+        return jsonify({"ok": True})
+    except Exception as e:
+        print(f"[control] Error handling post_control: {e}")
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 @app.route("/api/control-loop", methods=["GET"])
@@ -683,8 +714,77 @@ def get_control_loop():
             if state.get("status") == "off":
                 action_label = "POWER_OFF"
 
+            # Evaluate RL agent model if available
+            agent_dict = rl_agents.get(aid)
+            rl_action_str = None
+            rl_reward = None
+            rl_confidence = None
+
+            if agent_dict is not None and isinstance(agent_dict, dict):
+                try:
+                    rl_model = agent_dict["model"]
+                    rl_scaler = agent_dict.get("scaler")
+                    rl_features = agent_dict["features"]
+                    rl_actions = agent_dict["actions"]
+
+                    now_dt = datetime.now()
+                    current_hour = now_dt.hour
+                    current_dow = now_dt.weekday()
+                    is_weekend = 1 if current_dow >= 5 else 0
+
+                    base_sample = {
+                        "power_w": measured,
+                        "energy_kwh": state.get("energyTodayKwh", 0.0),
+                        "hour": current_hour,
+                        "day_of_week": current_dow,
+                        "is_weekend": is_weekend,
+                        "power_lag_1": measured,
+                        "power_lag_5": measured,
+                        "power_rolling_mean": measured,
+                        "power_rolling_max": measured,
+                        "anomaly_score": a_score,
+                        "peak_risk": 1 if risk == "risk" else 0,
+                        "user_behavior_score": 0.8,
+                        "energy_routine_index": 0.85,
+                        "dsc_score": 0.9,
+                        "stability_score": 0.95,
+                        "change_score": 0.05,
+                        "cdi_score": 0.88,
+                        "action": 0,
+                    }
+
+                    best_val = -float("inf")
+                    best_action_key = 0
+                    for action_key, action_name in rl_actions.items():
+                        row_dict = dict(base_sample)
+                        row_dict["action"] = action_key
+                        X_df = pd.DataFrame([row_dict])[rl_features]
+                        if rl_scaler is not None:
+                            X_vec = rl_scaler.transform(X_df)
+                        else:
+                            X_vec = X_df
+                        pred_q = rl_model.predict(X_vec)[0]
+                        if pred_q > best_val:
+                            best_val = pred_q
+                            best_action_key = action_key
+
+                    raw_action_name = rl_actions.get(best_action_key, "maintain")
+                    rl_action_map = {
+                        "maintain": "HOLD_SETPOINT",
+                        "reduce": "REDUCE_LOAD",
+                        "shift": "ECO_OPTIMIZE",
+                        "turn_off": "POWER_OFF",
+                    }
+                    rl_action_str = rl_action_map.get(raw_action_name, "HOLD_SETPOINT")
+                    rl_reward = round(float(best_val), 2)
+                    rl_confidence = max(60, min(99, round(85 + best_val * 10 - a_score * 15)))
+                except Exception as e:
+                    print(f"[rl_eval] Error executing RL model for {aid}: {e}")
+
             if safety_status == "blocked":
                 next_action = "HOLD + NOTIFY_USER"
+            elif rl_action_str is not None:
+                next_action = rl_action_str
             elif error > profile["ratedPowerW"] * 0.12:
                 next_action = "REDUCE_LOAD"
             elif error < -profile["ratedPowerW"] * 0.12:
@@ -692,7 +792,8 @@ def get_control_loop():
             else:
                 next_action = "HOLD_SETPOINT"
 
-            confidence = max(40, min(99, round(88 - norm_err * 90 + (1 - a_score) * 10)))
+            reward = rl_reward if rl_reward is not None else round(1 - norm_err * 1.6 - a_score * 0.5, 2)
+            confidence = rl_confidence if rl_confidence is not None else max(40, min(99, round(88 - norm_err * 90 + (1 - a_score) * 10)))
 
             result.append({
                 "id": aid,
@@ -793,7 +894,17 @@ if __name__ == "__main__":
     t = threading.Thread(target=_replay_loop, daemon=True)
     t.start()
     print(f"[boot] Replay thread started (tick every {TICK_INTERVAL}s)")
-    print(f"[boot] Starting Flask on http://localhost:5000")
+
+    port = 5000
+    try:
+        import socket
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.bind(("0.0.0.0", 5000))
+        sock.close()
+    except Exception:
+        port = 5001
+
+    print(f"[boot] Starting Flask on http://localhost:{port}")
     print(f"[boot] Dashboard should connect via Settings -> Use Live API")
 
-    app.run(host="0.0.0.0", port=5000, debug=False, use_reloader=False)
+    app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)

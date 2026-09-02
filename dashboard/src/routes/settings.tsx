@@ -96,7 +96,7 @@ function SettingsPage() {
           <Input
             value={settings.apiBaseUrl}
             onChange={(e) => saveConfig("apiBaseUrl", e.target.value)}
-            placeholder="http://localhost:5000"
+            placeholder="https://energy-project1.onrender.com"
             className="mt-1"
           />
         </div>

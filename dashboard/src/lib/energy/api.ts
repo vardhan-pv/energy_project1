@@ -18,13 +18,15 @@ import type {
   ControlLoopState,
   ControlMode,
   Prediction,
+  House,
 } from "./types";
 
 export const ENDPOINTS = {
+  house: "GET /api/house",
   appliances: "GET /api/appliances",
   telemetry: "GET /api/telemetry?window=5m",
   predictions: "GET /api/predictions?horizon=30",
-  control: "POST /api/control  { appliance_id, action, mode, target_w }",
+  control: "POST /api/control { id, action, on?, mode?, targetW? }",
   controlLoop: "GET /api/control-loop",
   alerts: "GET /api/alerts",
   history: "GET /api/history?range=7d",
@@ -33,6 +35,7 @@ export const ENDPOINTS = {
 } as const;
 
 export interface EnergyDataSource {
+  getHouse(): Promise<House>;
   listAppliances(): Promise<ApplianceProfile[]>;
   getTelemetry(): Promise<ApplianceRuntime[]>;
   getPredictions(horizonMinutes: number): Promise<Prediction[]>;
@@ -73,6 +76,7 @@ export function createHttpDataSource(baseUrl: string): EnergyDataSource {
   };
 
   return {
+    getHouse: () => json<House>("/api/house"),
     listAppliances: () => json<ApplianceProfile[]>("/api/appliances"),
     getTelemetry: () => json<ApplianceRuntime[]>("/api/telemetry"),
     getPredictions: (h) => json<Prediction[]>(`/api/predictions?horizon=${h}`),

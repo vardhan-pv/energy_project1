@@ -14,6 +14,27 @@ export type ApplianceStatus = "on" | "off" | "standby";
 
 export type RiskLevel = "normal" | "watch" | "risk";
 
+export type HouseStatus =
+  | "INITIALIZING"
+  | "READY"
+  | "ONLINE"
+  | "OFFLINE"
+  | "ERROR";
+
+export type DataStatus =
+  | "PENDING"
+  | "AVAILABLE"
+  | "PARTIAL"
+  | "ERROR";
+
+export interface House {
+  id: string;
+  name: string;
+  location: string;
+  status: HouseStatus;
+  dataStatus: DataStatus;
+}
+
 export interface ApplianceProfile {
   id: ApplianceId;
   name: string;

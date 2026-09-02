@@ -21,31 +21,33 @@ export const Route = createFileRoute("/appliances")({
 const ROOMS = ["All rooms", "Study", "Kitchen"];
 
 function AppliancesPage() {
-  const { ready, runtimes } = useEnergy();
+  const { ready, runtimes, appliances, house } = useEnergy();
   const [room, setRoom] = useState("All rooms");
   const [onlyRunning, setOnlyRunning] = useState(false);
 
-  if (!ready) {
+  if (!ready || house?.dataStatus === "PENDING") {
     return (
       <>
-        <PageHeader title="Appliances" description="Your connected demo appliances." />
+        <PageHeader title="Appliances" description="Your connected home appliances." />
         <LoadingPanel />
       </>
     );
   }
 
-  const list = APPLIANCES.filter((a) => (room === "All rooms" ? true : a.room === room)).filter((a) =>
-    onlyRunning ? runtimes[a.id].status === "on" : true,
-  );
+  const rooms = ["All rooms", ...Array.from(new Set(appliances.map((a) => a.room)))];
+
+  const list = appliances
+    .filter((a) => (room === "All rooms" ? true : a.room === room))
+    .filter((a) => (onlyRunning ? runtimes[a.id]?.status === "on" : true));
 
   return (
     <>
       <PageHeader
         title="Appliances"
-        description="Four trained appliance models are connected in this demo. Tap Control on any card to change how it runs."
+        description={`${appliances.length} trained appliance models are connected. Tap Control on any card to change how it runs.`}
         actions={
           <>
-            {ROOMS.map((r) => (
+            {rooms.map((r) => (
               <Button key={r} size="sm" variant={room === r ? "default" : "outline"} onClick={() => setRoom(r)}>
                 {r}
               </Button>

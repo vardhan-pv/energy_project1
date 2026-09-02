@@ -10,11 +10,11 @@ import { ForecastChart } from "./charts";
 import { ApplianceIcon, RiskBadge } from "./primitives";
 
 export function PredictionCard({ id }: { id: ApplianceId }) {
-  const { predictions, runtimes, settings } = useEnergy();
+  const { predictions, runtimes, settings, appliances } = useEnergy();
   const p = predictions[id];
   const rt = runtimes[id];
-  const profile = APPLIANCE_MAP[id];
-  if (!p || !rt) return null;
+  const profile = appliances.find((a) => a.id === id) ?? APPLIANCE_MAP[id];
+  if (!p || !rt || !profile) return null;
 
   const delta = p.nextPowerW - rt.powerW;
   const cost = p.expectedUsageKwh * settings.tariffPerKwh;

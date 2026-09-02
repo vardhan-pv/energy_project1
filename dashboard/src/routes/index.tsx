@@ -29,24 +29,29 @@ export const Route = createFileRoute("/")({
 });
 
 function Overview() {
-  const { ready, snapshot, runtimes, settings, history } = useEnergy();
+  const { ready, snapshot, runtimes, settings, history, house, appliances } = useEnergy();
 
-  if (!ready) {
+  if (!ready || house?.dataStatus === "PENDING") {
     return (
       <>
-        <PageHeader title="Overview" description="Your home's energy at a glance." />
+        <PageHeader
+          title={house ? house.name : "Overview"}
+          description={house ? `${house.location} · ID: ${house.id} · Data Status: PENDING` : "Your home's energy at a glance."}
+        />
         <LoadingPanel />
       </>
     );
   }
 
-  const combined = runtimes.laptop.history.slice(-45).map((s, i) => ({
-    t: s.t,
-    laptop: s.powerW,
-    kitchen_lights: runtimes.kitchen_lights.history.slice(-45)[i]?.powerW ?? 0,
-    office_fan: runtimes.office_fan.history.slice(-45)[i]?.powerW ?? 0,
-    fridge: runtimes.fridge.history.slice(-45)[i]?.powerW ?? 0,
-  }));
+  const firstAppId = appliances[0]?.id;
+  const baseHistory = firstAppId && runtimes[firstAppId] ? runtimes[firstAppId].history.slice(-45) : [];
+  const combined = baseHistory.map((s, i) => {
+    const row: Record<string, number> = { t: s.t };
+    for (const a of appliances) {
+      row[a.id] = runtimes[a.id]?.history.slice(-45)[i]?.powerW ?? 0;
+    }
+    return row;
+  });
 
   const budgetPct = (snapshot.energyTodayKwh / settings.budgetKwhPerDay) * 100;
   const yesterday = history[history.length - 2]?.total ?? 0;
@@ -54,10 +59,10 @@ function Overview() {
   return (
     <>
       <PageHeader
-        title="Good to see you"
+        title={settings.useLiveApi && house ? house.name : "Good to see you"}
         description={
-          settings.useLiveApi
-            ? "Live data from trained ML models. Connected to the Flask API backend."
+          settings.useLiveApi && house
+            ? `${house.location} · ${house.id} · Status: ${house.status}`
             : "Everything below updates live from the built-in simulator. No hardware is physically connected."
         }
         actions={
@@ -76,7 +81,7 @@ function Overview() {
         <StatCard
           label="Total load now"
           value={fmtW(snapshot.totalPowerW, 1)}
-          unitHint="All four appliances combined"
+          unitHint={`${appliances.length} appliances combined`}
           icon={Zap}
           hint="How much electricity your home is drawing right this second."
         />
@@ -118,12 +123,11 @@ function Overview() {
           </div>
           <MultiLineChart
             data={combined}
-            series={[
-              { key: "fridge", label: "Fridge", color: "var(--color-chart-1)" },
-              { key: "laptop", label: "Laptop", color: "var(--color-chart-2)" },
-              { key: "office_fan", label: "Office Fan", color: "var(--color-chart-3)" },
-              { key: "kitchen_lights", label: "Kitchen Lights", color: "var(--color-chart-4)" },
-            ]}
+            series={appliances.map((a, i) => ({
+              key: a.id,
+              label: a.name,
+              color: `var(--color-chart-${(i % 4) + 1})`,
+            }))}
           />
         </div>
 
@@ -149,13 +153,13 @@ function Overview() {
           />
           <div className="mt-auto flex items-center gap-2 rounded-lg bg-surface p-3 text-xs text-muted-foreground">
             <ShieldCheck className="size-4 shrink-0 text-success" aria-hidden="true" />
-            The system will never switch off the fridge, and it asks before any disruptive action.
+            The system will never switch off critical appliances, and it asks before any disruptive action.
           </div>
         </div>
       </section>
 
       <section aria-label="Appliances" className="grid gap-4 xl:grid-cols-2">
-        {APPLIANCES.map((a) => (
+        {appliances.map((a) => (
           <ApplianceCard key={a.id} id={a.id} />
         ))}
       </section>

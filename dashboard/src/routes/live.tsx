@@ -40,11 +40,11 @@ const WINDOWS = [
 ];
 
 function LivePage() {
-  const { ready, runtimes, snapshot, settings } = useEnergy();
-  const [selected, setSelected] = useState<ApplianceId | "all">("all");
+  const { ready, runtimes, snapshot, settings, house, appliances } = useEnergy();
+  const [selected, setSelected] = useState<string | "all">("all");
   const [win, setWin] = useState("60");
 
-  if (!ready) {
+  if (!ready || house?.dataStatus === "PENDING") {
     return (
       <>
         <PageHeader title="Live Monitoring" description="Real-time readings from every appliance." />
@@ -54,12 +54,13 @@ function LivePage() {
   }
 
   const points = Number(win);
-  const shown = selected === "all" ? APPLIANCES.map((a) => a.id) : [selected];
-  const base = runtimes.laptop.history.slice(-points);
+  const shown = selected === "all" ? appliances.map((a) => a.id) : [selected];
+  const firstAppId = appliances[0]?.id;
+  const base = firstAppId && runtimes[firstAppId] ? runtimes[firstAppId].history.slice(-points) : [];
   const combined = base.map((s, i) => {
     const row: Record<string, number> = { t: s.t };
-    for (const id of APPLIANCES.map((a) => a.id)) {
-      row[id] = runtimes[id].history.slice(-points)[i]?.powerW ?? 0;
+    for (const id of appliances.map((a) => a.id)) {
+      row[id] = runtimes[id]?.history.slice(-points)[i]?.powerW ?? 0;
     }
     return row;
   });
@@ -71,13 +72,13 @@ function LivePage() {
         description="Readings refresh every few seconds. Pick an appliance or a time window to focus."
         actions={
           <>
-            <Select value={selected} onValueChange={(v) => setSelected(v as ApplianceId | "all")}>
+            <Select value={selected} onValueChange={(v) => setSelected(v)}>
               <SelectTrigger className="w-48" aria-label="Filter by appliance">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All appliances</SelectItem>
-                {APPLIANCES.map((a) => (
+                {appliances.map((a) => (
                   <SelectItem key={a.id} value={a.id}>
                     {a.name}
                   </SelectItem>
@@ -115,11 +116,14 @@ function LivePage() {
         <h2 className="mb-4 font-semibold">Power over time</h2>
         <MultiLineChart
           data={combined}
-          series={shown.map((id, i) => ({
-            key: id,
-            label: APPLIANCE_MAP[id].name,
-            color: `var(--color-chart-${(i % 4) + 1})`,
-          }))}
+          series={shown.map((id, i) => {
+            const profile = appliances.find((a) => a.id === id) ?? APPLIANCE_MAP[id as ApplianceId];
+            return {
+              key: id,
+              label: profile?.name ?? id,
+              color: `var(--color-chart-${(i % 4) + 1})`,
+            };
+          })}
           height={320}
         />
       </section>
@@ -127,7 +131,8 @@ function LivePage() {
       <section className="grid gap-4 lg:grid-cols-2">
         {shown.map((id) => {
           const rt = runtimes[id];
-          const profile = APPLIANCE_MAP[id];
+          const profile = appliances.find((a) => a.id === id) ?? APPLIANCE_MAP[id as ApplianceId];
+          if (!rt || !profile) return null;
           return (
             <div key={id} className="panel p-5">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">

@@ -106,7 +106,7 @@ export function DemoModeBadge() {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
-  const { snapshot, ready, now } = useEnergy();
+  const { snapshot, ready, now, house, appliances, settings } = useEnergy();
 
   return (
     <div className="min-h-screen bg-background">
@@ -123,8 +123,12 @@ export function AppShell({ children }: { children: ReactNode }) {
           <NavList />
         </div>
         <div className="border-t border-sidebar-border p-4 text-xs text-muted-foreground">
-          <p className="font-medium text-foreground">4 demo appliance models</p>
-          <p className="mt-1">Laptop · Kitchen Lights · Office Fan · Fridge</p>
+          <p className="font-medium text-foreground">
+            {settings.useLiveApi && house ? house.name : `${appliances.length} demo appliance models`}
+          </p>
+          <p className="mt-1 font-mono text-[11px] truncate">
+            {appliances.map((a) => a.name).join(" · ")}
+          </p>
         </div>
       </aside>
 
@@ -143,7 +147,25 @@ export function AppShell({ children }: { children: ReactNode }) {
             </SheetContent>
           </Sheet>
 
-          <DemoModeBadge />
+          {settings.useLiveApi ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge
+                  variant="outline"
+                  tabIndex={0}
+                  className="border-success/40 bg-success/15 text-success gap-1.5 font-medium"
+                >
+                  <span className="size-1.5 rounded-full bg-success" aria-hidden="true" />
+                  {house ? `${house.name} (${house.id})` : "Live API"}
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-64">
+                {house ? `${house.name} · ${house.location} · Status: ${house.status}` : "Connected to Live Flask API."}
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <DemoModeBadge />
+          )}
 
           <div className="ml-auto flex items-center gap-4 text-sm">
             <div className="hidden items-center gap-2 sm:flex">

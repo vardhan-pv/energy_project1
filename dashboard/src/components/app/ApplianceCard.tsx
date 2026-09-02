@@ -10,10 +10,10 @@ import { ApplianceIcon, RiskBadge, StatusDot } from "./primitives";
 import { PowerAreaChart } from "./charts";
 
 export function ApplianceCard({ id, compact = false }: { id: ApplianceId; compact?: boolean }) {
-  const { runtimes, settings } = useEnergy();
+  const { runtimes, appliances, settings } = useEnergy();
   const rt = runtimes[id];
-  const profile = APPLIANCE_MAP[id];
-  if (!rt) return null;
+  const profile = appliances.find((a) => a.id === id) ?? APPLIANCE_MAP[id];
+  if (!rt || !profile) return null;
 
   const loadPct = Math.min(100, (rt.powerW / profile.maxPowerW) * 100);
   const cost = rt.energyTodayKwh * settings.tariffPerKwh;

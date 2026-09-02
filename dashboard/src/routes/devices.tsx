@@ -1,11 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEnergy } from "@/lib/energy/store";
-import { PageHeader } from "@/components/app/primitives";
-import { APPLIANCES, APPLIANCE_MAP } from "@/lib/energy/appliances";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Cpu, Wifi, RefreshCw } from "lucide-react";
+import { Cpu, RefreshCw, Wifi } from "lucide-react";
 import { toast } from "sonner";
+import { LoadingPanel, PageHeader } from "@/components/app/primitives";
+import { useEnergy } from "@/lib/energy/store";
 
 export const Route = createFileRoute("/devices")({
   head: () => ({
@@ -17,17 +16,30 @@ export const Route = createFileRoute("/devices")({
 });
 
 function DevicesPage() {
-  const { runtimes, injectFault } = useEnergy();
+  const { ready, runtimes, appliances, injectFault, settings, house } = useEnergy();
+
+  if (!ready || house?.dataStatus === "PENDING") {
+    return (
+      <>
+        <PageHeader title="Device & IoT Status" description="Verify hardware links and connection health." />
+        <LoadingPanel />
+      </>
+    );
+  }
 
   return (
     <>
       <PageHeader
         title="Device & IoT Status"
-        description="Verify virtual hardware links, simulator signal levels, and battery parameters."
+        description={
+          settings.useLiveApi && house
+            ? `Live connection health for ${house.name} (${house.id}).`
+            : "Verify virtual hardware links, simulator signal levels, and battery parameters."
+        }
       />
 
       <div className="grid gap-4 md:grid-cols-2">
-        {APPLIANCES.map((a) => {
+        {appliances.map((a) => {
           const rt = runtimes[a.id];
           if (!rt) return null;
           return (
@@ -46,7 +58,7 @@ function DevicesPage() {
                 <div>
                   <span className="text-xs text-muted-foreground uppercase">Signal Strength</span>
                   <p className="font-medium mt-0.5 flex items-center gap-1.5">
-                    <Wifi className="size-4 text-success" /> {rt.signalPct}%
+                    <Wifi className="size-4 text-success" /> {rt.signalPct ?? 100}%
                   </p>
                 </div>
                 <div>
@@ -58,13 +70,13 @@ function DevicesPage() {
                 <div>
                   <span className="text-xs text-muted-foreground uppercase">Last Telemetry</span>
                   <p className="font-medium mt-0.5 text-xs">
-                    {new Date(rt.lastSeen).toLocaleTimeString()}
+                    {rt.lastSeen ? new Date(rt.lastSeen).toLocaleTimeString() : "N/A"}
                   </p>
                 </div>
                 <div>
-                  <span className="text-xs text-muted-foreground uppercase">Simulation Driver</span>
+                  <span className="text-xs text-muted-foreground uppercase">Data Source</span>
                   <p className="font-medium mt-0.5 text-xs text-success">
-                    Active (Deterministic)
+                    {settings.useLiveApi ? "Flask API (UK-DALE Replay)" : "Active (Simulator)"}
                   </p>
                 </div>
               </div>
@@ -75,7 +87,7 @@ function DevicesPage() {
                   variant="outline"
                   onClick={() => {
                     injectFault(a.id);
-                    toast.warning(`Toggled simulated abnormality on ${a.name}`);
+                    toast.warning(`Toggled abnormality test on ${a.name}`);
                   }}
                 >
                   <RefreshCw className="size-3.5 mr-1" />

@@ -31,13 +31,13 @@ const MODES: { value: ControlMode; label: string; help: string }[] = [
 ];
 
 export function ControlCard({ id }: { id: ApplianceId }) {
-  const { runtimes, loops, setPower, setMode, setTarget, settings } = useEnergy();
+  const { runtimes, loops, setPower, setMode, setTarget, settings, appliances } = useEnergy();
   const rt = runtimes[id];
   const loop = loops[id];
-  const profile = APPLIANCE_MAP[id];
+  const profile = appliances.find((a) => a.id === id) ?? APPLIANCE_MAP[id];
   const [confirm, setConfirm] = useState<null | { title: string; body: string; run: () => void }>(null);
 
-  if (!rt) return null;
+  if (!rt || !profile) return null;
   const blocked = settings.safetyInterlocks && loop?.safetyStatus === "blocked";
 
   const askPower = (on: boolean) => {
