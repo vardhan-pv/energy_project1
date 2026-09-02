@@ -192,6 +192,8 @@ peak_models/*.pkl
 .DS_Store
 Thumbs.db
 dashboard.zip
+*.db
+ceos_database.db
 0
 cd
 dir

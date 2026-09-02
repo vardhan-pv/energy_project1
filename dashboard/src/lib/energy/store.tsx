@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { APPLIANCES, APPLIANCE_MAP } from "./appliances";
-import { createHttpDataSource, type EnergyDataSource } from "./api";
+import { createHttpDataSource, type EnergyDataSource, type UserProfile } from "./api";
 import {
   controlLoop,
   dailyHistory,
@@ -81,6 +81,11 @@ interface EnergyContextValue extends EngineState {
   predictions: Record<string, Prediction>;
   horizonMinutes: number;
   connected: boolean;
+  user: UserProfile | null;
+  token: string | null;
+  loginUser: (identifier: string, pass: string) => Promise<UserProfile>;
+  registerUser: (name: string, email: string, pass: string) => Promise<UserProfile>;
+  logoutUser: () => void;
   setHorizonMinutes: (m: number) => void;
   updateSettings: (patch: Partial<Settings>) => void;
   setPower: (id: ApplianceId, on: boolean) => void;
@@ -313,8 +318,64 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
   const [horizonMinutes, setHorizonMinutes] = useState(30);
   const [state, setState] = useState<EngineState | null>(null);
   const [apiConnected, setApiConnected] = useState(false);
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [token, setToken] = useState<string | null>(null);
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const savedToken = window.localStorage.getItem("ceos.token");
+      const savedUser = window.localStorage.getItem("ceos.user");
+      if (savedToken && savedUser) {
+        setToken(savedToken);
+        try {
+          setUser(JSON.parse(savedUser));
+        } catch {
+          // ignore
+        }
+      }
+    }
+  }, []);
+
+  const loginUser = async (identifier: string, pass: string) => {
+    const ds = createHttpDataSource(settings.apiBaseUrl);
+    const res = await ds.login(identifier, pass);
+    if (res.ok && res.token) {
+      setToken(res.token);
+      setUser(res.user);
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("ceos.token", res.token);
+        window.localStorage.setItem("ceos.user", JSON.stringify(res.user));
+      }
+      return res.user;
+    }
+    throw new Error("Login failed");
+  };
+
+  const registerUser = async (name: string, email: string, pass: string) => {
+    const ds = createHttpDataSource(settings.apiBaseUrl);
+    const res = await ds.register(name, email, pass);
+    if (res.ok && res.token) {
+      setToken(res.token);
+      setUser(res.user);
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("ceos.token", res.token);
+        window.localStorage.setItem("ceos.user", JSON.stringify(res.user));
+      }
+      return res.user;
+    }
+    throw new Error("Registration failed");
+  };
+
+  const logoutUser = () => {
+    setToken(null);
+    setUser(null);
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem("ceos.token");
+      window.localStorage.removeItem("ceos.user");
+    }
+  };
 
   // Boot on the client only: keeps SSR output stable and avoids hydration drift.
   useEffect(() => {
@@ -349,7 +410,7 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const ds = createHttpDataSource(settings.apiBaseUrl);
+    const ds = createHttpDataSource(settings.apiBaseUrl, () => token);
     let cancelled = false;
 
     const poll = async () => {
@@ -780,6 +841,11 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
     predictions,
     horizonMinutes,
     connected: settings.useLiveApi ? apiConnected : !!state?.ready,
+    user,
+    token,
+    loginUser,
+    registerUser,
+    logoutUser,
     setHorizonMinutes,
     updateSettings,
     setPower,

@@ -12,6 +12,9 @@ import {
   PlugZap,
   Settings as SettingsIcon,
   Sliders,
+  User,
+  LogOut,
+  Wrench,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -106,7 +109,7 @@ export function DemoModeBadge() {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
-  const { snapshot, ready, now, house, appliances, settings } = useEnergy();
+  const { snapshot, ready, now, house, appliances, settings, user, logoutUser } = useEnergy();
 
   return (
     <div className="min-h-screen bg-background">
@@ -168,6 +171,23 @@ export function AppShell({ children }: { children: ReactNode }) {
           )}
 
           <div className="ml-auto flex items-center gap-4 text-sm">
+            {user ? (
+              <div className="flex items-center gap-2 bg-muted/60 px-2.5 py-1 rounded-lg border border-border/60">
+                <User className="h-3.5 w-3.5 text-primary" />
+                <span className="font-medium text-xs hidden sm:inline">{user.name}</span>
+                <span className="font-mono text-[11px] text-primary font-bold">({user.user_id})</span>
+                <Link to="/setup" className="text-xs hover:text-primary transition-colors flex items-center gap-1 ml-1" title="Run Setup Wizard">
+                  <Wrench className="h-3 w-3" />
+                </Link>
+                <button onClick={logoutUser} className="text-xs text-muted-foreground hover:text-destructive transition-colors ml-1" title="Sign Out">
+                  <LogOut className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ) : (
+              <Link to="/login" className="text-xs font-semibold text-primary hover:underline flex items-center gap-1">
+                <User className="h-3.5 w-3.5" /> Sign In / Register
+              </Link>
+            )}
             <div className="hidden items-center gap-2 sm:flex">
               <span className="text-muted-foreground">Now</span>
               <span className="num font-semibold">{ready ? fmtW(snapshot.totalPowerW) : "—"}</span>

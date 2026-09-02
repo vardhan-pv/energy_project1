@@ -17,8 +17,10 @@ import { Route as ControlRouteImport } from './routes/control'
 import { Route as DevicesRouteImport } from './routes/devices'
 import { Route as HistoryRouteImport } from './routes/history'
 import { Route as LiveRouteImport } from './routes/live'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as PredictionsRouteImport } from './routes/predictions'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as SetupRouteImport } from './routes/setup'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -60,6 +62,11 @@ const LiveRoute = LiveRouteImport.update({
   path: '/live',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PredictionsRoute = PredictionsRouteImport.update({
   id: '/predictions',
   path: '/predictions',
@@ -68,6 +75,11 @@ const PredictionsRoute = PredictionsRouteImport.update({
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SetupRoute = SetupRouteImport.update({
+  id: '/setup',
+  path: '/setup',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -80,8 +92,10 @@ export interface FileRoutesByFullPath {
   '/devices': typeof DevicesRoute
   '/history': typeof HistoryRoute
   '/live': typeof LiveRoute
+  '/login': typeof LoginRoute
   '/predictions': typeof PredictionsRoute
   '/settings': typeof SettingsRoute
+  '/setup': typeof SetupRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -92,8 +106,10 @@ export interface FileRoutesByTo {
   '/devices': typeof DevicesRoute
   '/history': typeof HistoryRoute
   '/live': typeof LiveRoute
+  '/login': typeof LoginRoute
   '/predictions': typeof PredictionsRoute
   '/settings': typeof SettingsRoute
+  '/setup': typeof SetupRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -105,8 +121,10 @@ export interface FileRoutesById {
   '/devices': typeof DevicesRoute
   '/history': typeof HistoryRoute
   '/live': typeof LiveRoute
+  '/login': typeof LoginRoute
   '/predictions': typeof PredictionsRoute
   '/settings': typeof SettingsRoute
+  '/setup': typeof SetupRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -119,8 +137,10 @@ export interface FileRouteTypes {
     | '/devices'
     | '/history'
     | '/live'
+    | '/login'
     | '/predictions'
     | '/settings'
+    | '/setup'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -131,8 +151,10 @@ export interface FileRouteTypes {
     | '/devices'
     | '/history'
     | '/live'
+    | '/login'
     | '/predictions'
     | '/settings'
+    | '/setup'
   id:
     | '__root__'
     | '/'
@@ -143,8 +165,10 @@ export interface FileRouteTypes {
     | '/devices'
     | '/history'
     | '/live'
+    | '/login'
     | '/predictions'
     | '/settings'
+    | '/setup'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -156,8 +180,10 @@ export interface RootRouteChildren {
   DevicesRoute: typeof DevicesRoute
   HistoryRoute: typeof HistoryRoute
   LiveRoute: typeof LiveRoute
+  LoginRoute: typeof LoginRoute
   PredictionsRoute: typeof PredictionsRoute
   SettingsRoute: typeof SettingsRoute
+  SetupRoute: typeof SetupRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -218,6 +244,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LiveRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/predictions': {
       id: '/predictions'
       path: '/predictions'
@@ -232,6 +265,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/setup': {
+      id: '/setup'
+      path: '/setup'
+      fullPath: '/setup'
+      preLoaderRoute: typeof SetupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -244,8 +284,10 @@ const rootRouteChildren: RootRouteChildren = {
   DevicesRoute: DevicesRoute,
   HistoryRoute: HistoryRoute,
   LiveRoute: LiveRoute,
+  LoginRoute: LoginRoute,
   PredictionsRoute: PredictionsRoute,
   SettingsRoute: SettingsRoute,
+  SetupRoute: SetupRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

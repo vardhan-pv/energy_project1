@@ -1,14 +1,7 @@
 /**
  * ---------------------------------------------------------------------------
- * HTTP / Flask Backend Connection
+ * HTTP / Flask Backend Connection & Phase 15 Auth APIs
  * ---------------------------------------------------------------------------
- * The dashboard can run on a deterministic client-side simulator (default) or
- * connect to the Python Flask API (`api_server.py`) for real model-driven data.
- *
- * To connect:
- *   1. Start the Flask server: `python api_server.py`
- *   2. Open Settings → enable "Use Live API" (persisted in localStorage)
- *   3. The store automatically switches from simulation to polling the API.
  */
 import type {
   AlertItem,
@@ -22,8 +15,16 @@ import type {
 } from "./types";
 
 export const ENDPOINTS = {
+  register: "POST /api/auth/register",
+  login: "POST /api/auth/login",
+  me: "GET /api/auth/me",
+  createHouse: "POST /api/houses",
+  getHouses: "GET /api/houses",
+  createDevice: "POST /api/devices",
+  getDevices: "GET /api/devices",
+  createAppliance: "POST /api/appliances",
+  getAppliances: "GET /api/appliances",
   house: "GET /api/house",
-  appliances: "GET /api/appliances",
   telemetry: "GET /api/telemetry?window=5m",
   predictions: "GET /api/predictions?horizon=30",
   control: "POST /api/control { id, action, on?, mode?, targetW? }",
@@ -31,10 +32,25 @@ export const ENDPOINTS = {
   alerts: "GET /api/alerts",
   history: "GET /api/history?range=7d",
   health: "GET /api/health",
-  stream: "WS  /ws/telemetry (optional, falls back to polling)",
 } as const;
 
+export interface UserProfile {
+  user_id: string;
+  name: string;
+  email: string;
+  status?: string;
+  house?: House | null;
+}
+
 export interface EnergyDataSource {
+  register(name: string, email: string, password: string): Promise<{ ok: boolean; user: UserProfile; token: string }>;
+  login(identifier: string, password: string): Promise<{ ok: boolean; user: UserProfile; token: string }>;
+  getCurrentUser(): Promise<{ ok: boolean; user: UserProfile }>;
+  createHouse(houseName: string, location: string): Promise<{ ok: boolean; house: House }>;
+  getHouses(): Promise<House[]>;
+  createDevice(deviceType: string, deviceName: string, macAddress?: string): Promise<{ ok: boolean; device: any }>;
+  getDevices(): Promise<any[]>;
+  createAppliance(deviceId: string | null, name: string, type: string, ratedPowerW: number): Promise<{ ok: boolean; appliance: any }>;
   getHouse(): Promise<House>;
   listAppliances(): Promise<ApplianceProfile[]>;
   getTelemetry(): Promise<ApplianceRuntime[]>;
@@ -63,19 +79,55 @@ export interface EnergyDataSource {
   checkHealth(): Promise<{ status: string; models_loaded: Record<string, number> }>;
 }
 
-/** Thin HTTP implementation, ready for the Flask backend. */
-export function createHttpDataSource(baseUrl: string): EnergyDataSource {
+/** HTTP implementation with optional Bearer JWT token support. */
+export function createHttpDataSource(baseUrl: string, getToken?: () => string | null): EnergyDataSource {
   const url = (p: string) => `${baseUrl.replace(/\/$/, "")}${p}`;
   const json = async <T>(p: string, init?: RequestInit): Promise<T> => {
+    const token = getToken ? getToken() : null;
+    const reqHeaders: Record<string, string> = { "content-type": "application/json" };
+    if (token) {
+      reqHeaders["Authorization"] = `Bearer ${token}`;
+    }
     const res = await fetch(url(p), {
-      headers: { "content-type": "application/json" },
+      headers: { ...reqHeaders, ...(init?.headers || {}) },
       ...init,
     });
-    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || `${res.status} ${res.statusText}`);
+    }
     return (await res.json()) as T;
   };
 
   return {
+    register: (name, email, password) =>
+      json<{ ok: boolean; user: UserProfile; token: string }>("/api/auth/register", {
+        method: "POST",
+        body: JSON.stringify({ name, email, password }),
+      }),
+    login: (identifier, password) =>
+      json<{ ok: boolean; user: UserProfile; token: string }>("/api/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ user_id: identifier, password }),
+      }),
+    getCurrentUser: () => json<{ ok: boolean; user: UserProfile }>("/api/auth/me"),
+    createHouse: (houseName, location) =>
+      json<{ ok: boolean; house: House }>("/api/houses", {
+        method: "POST",
+        body: JSON.stringify({ house_name: houseName, location }),
+      }),
+    getHouses: () => json<House[]>("/api/houses"),
+    createDevice: (deviceType, deviceName, macAddress) =>
+      json<{ ok: boolean; device: any }>("/api/devices", {
+        method: "POST",
+        body: JSON.stringify({ device_type: deviceType, device_name: deviceName, mac_address: macAddress }),
+      }),
+    getDevices: () => json<any[]>("/api/devices"),
+    createAppliance: (deviceId, name, type, ratedPowerW) =>
+      json<{ ok: boolean; appliance: any }>("/api/appliances", {
+        method: "POST",
+        body: JSON.stringify({ device_id: deviceId, appliance_name: name, appliance_type: type, rated_power_w: ratedPowerW }),
+      }),
     getHouse: () => json<House>("/api/house"),
     listAppliances: () => json<ApplianceProfile[]>("/api/appliances"),
     getTelemetry: () => json<ApplianceRuntime[]>("/api/telemetry"),

@@ -18,6 +18,7 @@ import time
 import math
 import threading
 from datetime import datetime, timedelta
+from functools import wraps
 from pathlib import Path
 
 import joblib
@@ -25,6 +26,8 @@ import numpy as np
 import pandas as pd
 from flask import Flask, jsonify, request
 from flask_cors import CORS
+
+import db_manager as db
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -488,10 +491,21 @@ def _replay_loop():
 
 
 # ---------------------------------------------------------------------------
-# Flask app
+# Flask app & Auth Helpers
 # ---------------------------------------------------------------------------
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}})
+
+
+def get_auth_user_id():
+    """Extract authenticated user_id from Authorization: Bearer <token> header."""
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.split(" ")[1]
+        decoded = db.decode_token(token)
+        if decoded:
+            return decoded.get("user_id")
+    return None
 
 
 HOUSE = {
@@ -503,34 +517,181 @@ HOUSE = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Phase 15: Auth & Setup APIs
+# ---------------------------------------------------------------------------
+@app.route("/api/auth/register", methods=["POST"])
+def auth_register():
+    data = request.get_json(force=True, silent=True) or {}
+    name = data.get("name")
+    email = data.get("email")
+    password = data.get("password")
+    if not name or not email or not password:
+        return jsonify({"ok": False, "error": "Name, email, and password are required"}), 400
+    try:
+        res = db.register_user(name, email, password)
+        return jsonify({
+            "ok": True,
+            "user": {"user_id": res["user_id"], "name": res["name"], "email": res["email"]},
+            "token": res["token"],
+        })
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 409
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/auth/login", methods=["POST"])
+def auth_login():
+    data = request.get_json(force=True, silent=True) or {}
+    identifier = data.get("user_id") or data.get("email") or data.get("identifier")
+    password = data.get("password")
+    if not identifier or not password:
+        return jsonify({"ok": False, "error": "User ID/email and password are required"}), 400
+    try:
+        res = db.authenticate_user(identifier, password)
+        return jsonify({
+            "ok": True,
+            "user": {"user_id": res["user_id"], "name": res["name"], "email": res["email"]},
+            "token": res["token"],
+        })
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 401
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/auth/me", methods=["GET"])
+def auth_me():
+    user_id = get_auth_user_id()
+    if not user_id:
+        return jsonify({"ok": False, "error": "Not authenticated"}), 401
+    profile = db.get_user_profile(user_id)
+    if not profile:
+        return jsonify({"ok": False, "error": "User not found"}), 404
+    return jsonify({"ok": True, "user": profile})
+
+
+@app.route("/api/houses", methods=["GET", "POST"])
+def manage_houses():
+    user_id = get_auth_user_id()
+    if not user_id:
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+    if request.method == "POST":
+        data = request.get_json(force=True, silent=True) or {}
+        house_name = data.get("house_name") or data.get("name")
+        location = data.get("location", "Home")
+        if not house_name:
+            return jsonify({"ok": False, "error": "House name required"}), 400
+        house = db.create_house(user_id, house_name, location)
+        return jsonify({"ok": True, "house": house})
+    else:
+        houses = db.get_user_houses(user_id)
+        return jsonify(houses)
+
+
+@app.route("/api/devices", methods=["GET", "POST"])
+def manage_devices():
+    user_id = get_auth_user_id()
+    if not user_id:
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+    houses = db.get_user_houses(user_id)
+    if not houses:
+        return jsonify({"ok": False, "error": "No house registered for this user"}), 404
+    house_id = houses[0]["id"]
+    if request.method == "POST":
+        data = request.get_json(force=True, silent=True) or {}
+        device_type = data.get("device_type", "ESP32")
+        device_name = data.get("device_name", "Smart Controller")
+        mac_address = data.get("mac_address")
+        dev = db.create_device(house_id, device_type, device_name, mac_address)
+        return jsonify({"ok": True, "device": dev})
+    else:
+        devs = db.get_house_devices(house_id)
+        return jsonify(devs)
+
+
+@app.route("/api/appliances", methods=["GET", "POST"])
+def manage_appliances():
+    user_id = get_auth_user_id()
+    if request.method == "POST":
+        if not user_id:
+            return jsonify({"ok": False, "error": "Unauthorized"}), 401
+        houses = db.get_user_houses(user_id)
+        if not houses:
+            return jsonify({"ok": False, "error": "No house found"}), 404
+        house_id = houses[0]["id"]
+        data = request.get_json(force=True, silent=True) or {}
+        device_id = data.get("device_id")
+        name = data.get("appliance_name") or data.get("name")
+        atype = data.get("appliance_type") or data.get("type", "generic")
+        rated = float(data.get("rated_power_w") or data.get("ratedPowerW") or 100)
+        if not name:
+            return jsonify({"ok": False, "error": "Appliance name required"}), 400
+        appliance = db.create_appliance(house_id, device_id, name, atype, rated)
+        return jsonify({"ok": True, "appliance": appliance})
+    else:
+        if user_id:
+            houses = db.get_user_houses(user_id)
+            if houses:
+                user_appliances = db.get_house_appliances(houses[0]["id"])
+                if user_appliances:
+                    return jsonify(user_appliances)
+
+        # Unauthenticated / Demo Fallback
+        result = []
+        for aid in APPLIANCE_IDS:
+            profile = dict(APPLIANCE_PROFILES[aid])
+            meta = model_metadata.get(aid, {})
+            r2 = meta.get("R2", 0.95)
+            profile["model"] = {
+                "name": f"{meta.get('model_type', 'unknown').replace('_', ' ').title()}",
+                "version": "v1.0-trained",
+                "trainedOn": f"UK-DALE real household data (R²={r2:.4f})",
+                "accuracyPct": round(r2 * 100, 1),
+            }
+            result.append(profile)
+        return jsonify(result)
+
+
 @app.route("/api/house", methods=["GET"])
 def get_house():
+    user_id = get_auth_user_id()
+    if user_id:
+        houses = db.get_user_houses(user_id)
+        if houses:
+            return jsonify(houses[0])
     return jsonify(HOUSE)
-
-
-@app.route("/api/appliances", methods=["GET"])
-def get_appliances():
-    """Return the 4 appliance profiles with real model metadata."""
-    result = []
-    for aid in APPLIANCE_IDS:
-        profile = dict(APPLIANCE_PROFILES[aid])
-        meta = model_metadata.get(aid, {})
-        smeta = status_metadata.get(aid, {})
-        r2 = meta.get("R2", 0.95)
-        profile["model"] = {
-            "name": f"{meta.get('model_type', 'unknown').replace('_', ' ').title()}",
-            "version": "v1.0-trained",
-            "trainedOn": f"UK-DALE real household data (R²={r2:.4f})",
-            "accuracyPct": round(r2 * 100, 1),
-        }
-        result.append(profile)
-    return jsonify(result)
 
 
 @app.route("/api/telemetry", methods=["GET"])
 def get_telemetry():
     """Return current ApplianceRuntime[] with real model-driven data."""
+    user_id = get_auth_user_id()
     with _lock:
+        if user_id:
+            houses = db.get_user_houses(user_id)
+            if houses:
+                user_apps = db.get_house_appliances(houses[0]["id"])
+                if user_apps:
+                    result = []
+                    now_ms = int(time.time() * 1000)
+                    for app_info in user_apps:
+                        aid = app_info["id"]
+                        state = _current_state.get(aid)
+                        if state:
+                            result.append(dict(state))
+                        else:
+                            atype = app_info.get("type", "generic").lower()
+                            base_id = atype if atype in APPLIANCE_IDS else "laptop"
+                            base_state = _current_state.get(base_id) or _make_default_state(base_id, now_ms)
+                            user_state = dict(base_state)
+                            user_state["id"] = aid
+                            user_state["name"] = app_info["name"]
+                            user_state["targetPowerW"] = app_info["ratedPowerW"]
+                            result.append(user_state)
+                    return jsonify(result)
+
         result = []
         for aid in APPLIANCE_IDS:
             state = _current_state.get(aid)
@@ -545,24 +706,42 @@ def get_telemetry():
 def get_predictions():
     """Run trained energy models forward to produce Prediction[] with confidence bands."""
     horizon = int(request.args.get("horizon", 30))
+    user_id = get_auth_user_id()
+    target_apps = []
+    if user_id:
+        houses = db.get_user_houses(user_id)
+        if houses:
+            u_apps = db.get_house_appliances(houses[0]["id"])
+            if u_apps:
+                target_apps = u_apps
+
+    if not target_apps:
+        target_apps = [
+            {"id": aid, "name": APPLIANCE_PROFILES[aid]["name"], "type": aid, "ratedPowerW": APPLIANCE_PROFILES[aid]["ratedPowerW"]}
+            for aid in APPLIANCE_IDS
+        ]
+
     steps = 12
     step_minutes = horizon / steps
     now_ms = int(time.time() * 1000)
 
     result = []
     with _lock:
-        for aid in APPLIANCE_IDS:
-            state = _current_state.get(aid, {})
-            profile = APPLIANCE_PROFILES[aid]
-            meta = model_metadata.get(aid, {})
-            power_now = state.get("powerW", profile["ratedPowerW"] * 0.8)
+        for app_info in target_apps:
+            aid = app_info["id"]
+            atype = app_info.get("type", "generic").lower()
+            model_id = atype if atype in APPLIANCE_IDS else "laptop"
+            profile = APPLIANCE_PROFILES.get(model_id, APPLIANCE_PROFILES["laptop"])
+            rated_w = app_info.get("ratedPowerW") or profile["ratedPowerW"]
+
+            state = _current_state.get(aid) or _current_state.get(model_id, {})
+            power_now = state.get("powerW", rated_w * 0.8)
             mode = state.get("mode", "maintain")
             status = state.get("status", "on")
             a_score = state.get("anomalyScore", 0.05)
 
             curve = []
             power_sum = 0
-            # Build a feature set for prediction, stepping forward in time
             current_hour = datetime.now().hour
             current_dow = datetime.now().weekday()
             current_month = datetime.now().month
@@ -587,16 +766,14 @@ def get_predictions():
                     "power_w": power_now,
                 }
 
-                predicted = _predict_power(aid, features)
+                predicted = _predict_power(model_id, features)
                 if predicted is None:
                     predicted = power_now
 
-                # Apply mode factor
                 mode_factor = {"maintain": 1.0, "reduce": 0.75, "increase": 1.2, "eco": 0.6}.get(mode, 1.0)
                 predicted = round(predicted * mode_factor, 1)
                 predicted = max(0, predicted)
 
-                # Confidence band widens with time
                 spread = max(2, predicted * (0.07 + i * 0.015))
                 t = now_ms + int(future_minutes * 60 * 1000)
 
@@ -608,19 +785,19 @@ def get_predictions():
                 })
                 power_sum += predicted
 
-                # Shift lags forward for next step
                 lag_5 = lag_1
                 lag_1 = predicted
                 rolling_mean = (rolling_mean * 0.8 + predicted * 0.2)
                 rolling_max = max(rolling_max, predicted)
 
             avg_w = power_sum / steps if steps > 0 else power_now
+            meta = model_metadata.get(model_id, {})
             r2 = meta.get("R2", 0.95)
             base_confidence = r2 * 100 - horizon * 0.06
             confidence = max(55, min(99, round(base_confidence - a_score * 22)))
 
             risk = state.get("risk", "normal")
-            if risk != "risk" and avg_w > profile["ratedPowerW"] * 1.15:
+            if risk != "risk" and avg_w > rated_w * 1.15:
                 risk = "watch"
 
             risk_note = {
@@ -645,14 +822,31 @@ def get_predictions():
 
 @app.route("/api/control", methods=["POST"])
 def post_control():
-    """Accept control commands from the dashboard UI."""
+    """Accept control commands from the dashboard UI with authorization check."""
     try:
+        user_id = get_auth_user_id()
         data = request.get_json(force=True, silent=True) or {}
         aid = data.get("id")
         action = data.get("action")
 
-        if aid not in APPLIANCE_IDS:
-            return jsonify({"ok": False, "error": "Unknown appliance"}), 400
+        if user_id:
+            houses = db.get_user_houses(user_id)
+            if not houses:
+                return jsonify({"ok": False, "error": "House not found"}), 404
+            u_apps = db.get_house_appliances(houses[0]["id"])
+            valid_ids = {a["id"] for a in u_apps}
+            if aid not in valid_ids:
+                return jsonify({"ok": False, "error": "Appliance does not belong to logged-in user house"}), 403
+
+            if action == "power":
+                on = data.get("on", True)
+                db.update_appliance_state(aid, status="ON" if on else "OFF")
+            elif action == "mode":
+                mode = data.get("mode", "maintain")
+                db.update_appliance_state(aid, mode=mode)
+        else:
+            if aid not in APPLIANCE_IDS:
+                return jsonify({"ok": False, "error": "Unknown appliance"}), 400
 
         with _lock:
             override = _control_overrides.get(aid, {})
@@ -668,7 +862,7 @@ def post_control():
                 print(f"[control] {aid} mode -> {mode}")
 
             elif action == "target":
-                target_w = data.get("targetW", APPLIANCE_PROFILES[aid]["ratedPowerW"])
+                target_w = data.get("targetW", 100)
                 override["targetW"] = target_w
                 print(f"[control] {aid} target -> {target_w} W")
 
@@ -683,18 +877,38 @@ def post_control():
 @app.route("/api/control-loop", methods=["GET"])
 def get_control_loop():
     """Return ControlLoopState[] using RL agent reward calculations."""
+    user_id = get_auth_user_id()
+    target_apps = []
+    if user_id:
+        houses = db.get_user_houses(user_id)
+        if houses:
+            u_apps = db.get_house_appliances(houses[0]["id"])
+            if u_apps:
+                target_apps = u_apps
+
+    if not target_apps:
+        target_apps = [
+            {"id": aid, "name": APPLIANCE_PROFILES[aid]["name"], "type": aid, "ratedPowerW": APPLIANCE_PROFILES[aid]["ratedPowerW"]}
+            for aid in APPLIANCE_IDS
+        ]
+
     result = []
     with _lock:
-        for aid in APPLIANCE_IDS:
-            state = _current_state.get(aid, {})
-            profile = APPLIANCE_PROFILES[aid]
-            target = state.get("targetPowerW", profile["ratedPowerW"])
+        for app_info in target_apps:
+            aid = app_info["id"]
+            atype = app_info.get("type", "generic").lower()
+            model_id = atype if atype in APPLIANCE_IDS else "laptop"
+            profile = APPLIANCE_PROFILES.get(model_id, APPLIANCE_PROFILES["laptop"])
+            rated_w = app_info.get("ratedPowerW") or profile["ratedPowerW"]
+
+            state = _current_state.get(aid) or _current_state.get(model_id, {})
+            target = state.get("targetPowerW", rated_w)
             measured = state.get("powerW", 0)
             error = round(measured - target, 1)
-            norm_err = abs(error) / max(profile["ratedPowerW"], 1)
+            norm_err = abs(error) / max(rated_w, 1)
             a_score = state.get("anomalyScore", 0.05)
             reward = round(1 - norm_err * 1.6 - a_score * 0.5, 2)
-            success = abs(error) <= max(4, profile["ratedPowerW"] * 0.12)
+            success = abs(error) <= max(4, rated_w * 0.12)
             risk = state.get("risk", "normal")
             mode = state.get("mode", "maintain")
 
