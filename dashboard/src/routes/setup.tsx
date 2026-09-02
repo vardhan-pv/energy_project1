@@ -16,7 +16,7 @@ export const Route = createFileRoute("/setup")({
 
 export function SetupWizardPage() {
   const navigate = useNavigate();
-  const { user, token, settings } = useEnergy();
+  const { user, token, settings, logoutUser } = useEnergy();
 
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
@@ -40,6 +40,17 @@ export function SetupWizardPage() {
 
   const getDs = () => createHttpDataSource(settings.apiBaseUrl, () => token);
 
+  const handleUnauthorized = (err: any) => {
+    const msg = String(err?.message || err || "").toLowerCase();
+    if (msg.includes("unauthorized") || msg.includes("401") || msg.includes("not found")) {
+      toast.error("Session expired or user account not found in database. Please log in or register.");
+      logoutUser();
+      navigate({ to: "/login" });
+      return true;
+    }
+    return false;
+  };
+
   const handleCreateHouse = async () => {
     if (!houseName) {
       toast.error("Please enter a house name");
@@ -49,10 +60,12 @@ export function SetupWizardPage() {
     try {
       const res = await getDs().createHouse(houseName, location);
       setCreatedHouse(res.house);
-      toast.success(`House created! House ID: ${res.house.id || (res.house as any).house_id}`);
+      toast.success(`House registered! House ID: ${res.house.id || (res.house as any).house_id}`);
       setStep(3);
     } catch (err: any) {
-      toast.error(err.message || "Failed to create house");
+      if (!handleUnauthorized(err)) {
+        toast.error(err.message || "Failed to create house");
+      }
     } finally {
       setLoading(false);
     }
@@ -70,7 +83,9 @@ export function SetupWizardPage() {
       toast.success(`Device registered! Device ID: ${res.device.device_id}`);
       setStep(4);
     } catch (err: any) {
-      toast.error(err.message || "Failed to register device");
+      if (!handleUnauthorized(err)) {
+        toast.error(err.message || "Failed to register device");
+      }
     } finally {
       setLoading(false);
     }
@@ -87,10 +102,11 @@ export function SetupWizardPage() {
       const res = await getDs().createAppliance(devId, appName, appType, Number(ratedPowerW));
       setAppliancesList((prev) => [...prev, res.appliance]);
       toast.success(`Appliance '${appName}' added!`);
-      // Reset appliance form for additional additions
       setAppName("");
     } catch (err: any) {
-      toast.error(err.message || "Failed to add appliance");
+      if (!handleUnauthorized(err)) {
+        toast.error(err.message || "Failed to add appliance");
+      }
     } finally {
       setLoading(false);
     }
