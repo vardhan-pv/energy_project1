@@ -81,7 +81,7 @@ function Overview() {
         <StatCard
           label="Total load now"
           value={fmtW(snapshot.totalPowerW, 1)}
-          unitHint={`${appliances.length} appliances combined`}
+          unitHint={settings.useLiveApi ? "Monitored AC load" : `${appliances.length} appliances combined`}
           icon={Zap}
           hint="How much electricity your home is drawing right this second."
         />
@@ -131,41 +131,114 @@ function Overview() {
           />
         </div>
 
-        <div className="panel flex flex-col gap-4 p-5">
-          <h2 className="font-semibold">Comfort &amp; safety</h2>
-          <StatusRow
-            label="Comfort"
-            value={snapshot.comfort}
-            tone={snapshot.comfort === "optimal" ? "success" : snapshot.comfort === "acceptable" ? "warning" : "danger"}
-            detail={
-              snapshot.ambientTempC !== undefined
-                ? `Temp: ${snapshot.ambientTempC.toFixed(1)}°C${snapshot.ambientHumidityPct !== undefined ? ` · Humidity: ${snapshot.ambientHumidityPct.toFixed(1)}%` : ""}`
-                : "Not available (no ambient temp/humidity sensor data received)"
-            }
-          />
-          {settings.useLiveApi && snapshot.isHardwareLive ? (
+        <div className="flex flex-col gap-4">
+          <div className="panel flex flex-col gap-4 p-5">
+            <h2 className="font-semibold">Comfort &amp; safety</h2>
             <StatusRow
-              label="Hardware Node"
-              value="Authenticated"
-              tone="success"
-              detail={`Device: ${snapshot.primaryApplianceId || "ESP32"} · Voltage: ${snapshot.voltageV ? snapshot.voltageV.toFixed(1) + " V" : "Not available"} · Current: ${snapshot.currentA !== undefined ? snapshot.currentA.toFixed(2) + " A" : "Not available"}`}
+              label="Comfort"
+              value={snapshot.comfort}
+              tone={snapshot.comfort === "optimal" ? "success" : snapshot.comfort === "acceptable" ? "warning" : "danger"}
+              detail={
+                snapshot.ambientTempC !== undefined
+                  ? `Temp: ${snapshot.ambientTempC.toFixed(1)}°C${snapshot.ambientHumidityPct !== undefined ? ` · Humidity: ${snapshot.ambientHumidityPct.toFixed(1)}%` : ""}`
+                  : "Not available (no ambient temp/humidity sensor data received)"
+              }
             />
-          ) : null}
-          <StatusRow
-            label="Safety"
-            value={snapshot.safety}
-            tone={snapshot.safety === "safe" ? "success" : snapshot.safety === "guarded" ? "warning" : "danger"}
-            detail={settings.safetyInterlocks ? "Interlocks are switched on." : "Interlocks are switched off in Settings."}
-          />
-          <StatusRow
-            label="Yesterday"
-            value={fmtKwh(yesterday)}
-            tone={yesterday > snapshot.energyTodayKwh ? "success" : "warning"}
-            detail="Total electricity used the previous day."
-          />
-          <div className="mt-auto flex items-center gap-2 rounded-lg bg-surface p-3 text-xs text-muted-foreground">
-            <ShieldCheck className="size-4 shrink-0 text-success" aria-hidden="true" />
-            The system will never switch off critical appliances, and it asks before any disruptive action.
+            <StatusRow
+              label="Safety"
+              value={snapshot.safety}
+              tone={snapshot.safety === "safe" ? "success" : snapshot.safety === "guarded" ? "warning" : "danger"}
+              detail={settings.safetyInterlocks ? "Interlocks are switched on." : "Interlocks are switched off in Settings."}
+            />
+            <StatusRow
+              label="Yesterday"
+              value={fmtKwh(yesterday)}
+              tone={yesterday > snapshot.energyTodayKwh ? "success" : "warning"}
+              detail="Total electricity used the previous day."
+            />
+            <div className="mt-auto flex items-center gap-2 rounded-lg bg-surface p-3 text-xs text-muted-foreground">
+              <ShieldCheck className="size-4 shrink-0 text-success" aria-hidden="true" />
+              The system will never switch off critical appliances, and it asks before any disruptive action.
+            </div>
+          </div>
+
+          <div className="panel flex flex-col gap-3 p-5">
+            <div className="flex items-center justify-between border-b pb-2">
+              <h2 className="font-semibold text-sm">Real-Time Hardware Telemetry</h2>
+              <span className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded">
+                {settings.useLiveApi && snapshot.isHardwareLive ? "LIVE ESP32" : "OFFLINE / SIMULATION"}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="rounded border p-2">
+                <span className="text-muted-foreground">🌡 Temperature</span>
+                <p className="font-semibold num text-sm mt-0.5">
+                  {snapshot.ambientTempC !== undefined ? `${snapshot.ambientTempC.toFixed(1)} °C` : "Not available"}
+                </p>
+              </div>
+              <div className="rounded border p-2">
+                <span className="text-muted-foreground">💧 Humidity</span>
+                <p className="font-semibold num text-sm mt-0.5">
+                  {snapshot.ambientHumidityPct !== undefined ? `${snapshot.ambientHumidityPct.toFixed(1)} %` : "Not available"}
+                </p>
+              </div>
+              <div className="rounded border p-2">
+                <span className="text-muted-foreground">⚡ Voltage</span>
+                <p className="font-semibold num text-sm mt-0.5">
+                  {snapshot.voltageV !== undefined ? `${snapshot.voltageV.toFixed(1)} V` : "Not available"}
+                </p>
+              </div>
+              <div className="rounded border p-2">
+                <span className="text-muted-foreground">🔌 Current</span>
+                <p className="font-semibold num text-sm mt-0.5">
+                  {snapshot.currentA !== undefined ? `${snapshot.currentA.toFixed(2)} A` : "Not available"}
+                </p>
+              </div>
+              <div className="rounded border p-2">
+                <span className="text-muted-foreground">⚡ Power</span>
+                <p className="font-semibold num text-sm mt-0.5">{fmtW(snapshot.totalPowerW, 2)}</p>
+              </div>
+              <div className="rounded border p-2">
+                <span className="text-muted-foreground">📊 Energy</span>
+                <p className="font-semibold num text-sm mt-0.5">{fmtKwh(snapshot.energyTodayKwh)}</p>
+              </div>
+              <div className="rounded border p-2">
+                <span className="text-muted-foreground">∿ Frequency</span>
+                <p className="font-semibold text-sm mt-0.5 text-muted-foreground">Not available</p>
+              </div>
+              <div className="rounded border p-2">
+                <span className="text-muted-foreground">PF (Power Factor)</span>
+                <p className="font-semibold text-sm mt-0.5 text-muted-foreground">Not available</p>
+              </div>
+            </div>
+
+            <div className="border-t pt-2 mt-1 space-y-1.5 text-xs">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Relay Status</span>
+                <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                  {Object.values(runtimes).find(r => r.isHardware)?.status === "off" ? "OFF (Open)" : "ON (Closed)"}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Device Status</span>
+                <span className="font-semibold">
+                  {snapshot.isHardwareLive ? "ONLINE (Authenticated)" : "Simulation Mode"}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Device ID</span>
+                <span className="font-mono">{(Object.values(runtimes).find(r => r.isHardware) as any)?.device_id || (snapshot.isHardwareLive ? "DEV-638C71FE" : "Not available")}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Appliance ID</span>
+                <span className="font-mono">{snapshot.primaryApplianceId || "APP-79290D01"}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Last Telemetry</span>
+                <span className="font-mono">{snapshot.t ? new Date(snapshot.t).toLocaleTimeString() : "Not available"}</span>
+              </div>
+            </div>
           </div>
         </div>
       </section>
