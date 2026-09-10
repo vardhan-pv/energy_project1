@@ -828,8 +828,10 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
       };
     }
     const currentAppliances = state.appliances.length > 0 ? state.appliances : APPLIANCES;
-    const activeHardwareRuntimes = Object.values(state.runtimes).filter((r) => r.isHardware);
-    const primaryHardware = activeHardwareRuntimes[0];
+    const activeHardwareRuntimes = Object.values(state.runtimes).filter(
+      (r) => r.isHardware || (r as any).voltageV !== undefined || (r as any).tempC !== undefined || r.temperatureC !== undefined
+    );
+    const primaryHardware = activeHardwareRuntimes[0] || Object.values(state.runtimes).find((r) => r.temperatureC !== undefined || (r as any).tempC !== undefined);
 
     const totalPowerW = settings.useLiveApi
       ? (activeHardwareRuntimes.length > 0
@@ -847,10 +849,13 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
     const risky = currentAppliances.some((p) => state.runtimes[p.id]?.risk === "risk");
     const watch = currentAppliances.some((p) => state.runtimes[p.id]?.risk === "watch");
 
+    const tempVal = primaryHardware?.temperatureC ?? (primaryHardware as any)?.tempC;
+    const humidityVal = primaryHardware?.humidityPct ?? (primaryHardware as any)?.humidity;
+
     let comfort: "optimal" | "acceptable" | "attention" = "optimal";
-    if (primaryHardware?.temperatureC !== undefined) {
-      if (primaryHardware.temperatureC > 32 || primaryHardware.temperatureC < 18) comfort = "attention";
-      else if (primaryHardware.temperatureC > 28) comfort = "acceptable";
+    if (tempVal !== undefined) {
+      if (tempVal > 32 || tempVal < 18) comfort = "attention";
+      else if (tempVal > 28) comfort = "acceptable";
       else comfort = "optimal";
     } else {
       comfort = risky ? "attention" : watch ? "acceptable" : "optimal";
@@ -865,10 +870,10 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
       costToday: energyTodayKwh * settings.tariffPerKwh,
       comfort,
       safety: risky && settings.safetyInterlocks ? "blocked" : watch ? "guarded" : "safe",
-      ambientTempC: primaryHardware?.temperatureC,
-      ambientHumidityPct: primaryHardware?.humidityPct,
-      voltageV: primaryHardware?.voltageV,
-      currentA: primaryHardware?.currentA,
+      ambientTempC: tempVal,
+      ambientHumidityPct: humidityVal,
+      voltageV: primaryHardware?.voltageV ?? (primaryHardware as any)?.voltage,
+      currentA: primaryHardware?.currentA ?? (primaryHardware as any)?.current,
       primaryApplianceId: primaryHardware?.id,
       isHardwareLive: !!primaryHardware,
     };

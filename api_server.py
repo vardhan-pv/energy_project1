@@ -927,12 +927,20 @@ def manage_telemetry():
                         return jsonify(result)
 
             result = []
+            seen_ids = set()
             for aid in APPLIANCE_IDS:
                 state = _current_state.get(aid)
                 if state:
                     result.append(dict(state))
                 else:
                     result.append(_make_default_state(aid, int(time.time() * 1000)))
+                seen_ids.add(aid)
+
+            # Include any custom/hardware appliance states present in _current_state (e.g., ESP32 telemetry meters)
+            for aid, state in _current_state.items():
+                if aid not in seen_ids:
+                    result.append(dict(state))
+
             return jsonify(result)
 
 
