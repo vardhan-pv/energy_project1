@@ -813,6 +813,23 @@ def manage_telemetry():
             "power_rolling_max": power_w,
         }
         anomaly_score = _anomaly_score(model_id, features)
+        predicted_power = _predict_power(model_id, features)
+        if predicted_power is None:
+            predicted_power = power_w
+
+        # RL Decision Core & Relay Command Calculation
+        rated_w = float(app_info.get("ratedPowerW") or 100.0)
+        mode = app_info.get("mode", "maintain")
+        target_w = rated_w
+        if mode in ["reduce", "eco"]:
+            target_w = round(rated_w * 0.75, 1)
+        elif mode == "increase":
+            target_w = round(rated_w * 1.2, 1)
+
+        power_error = round(power_w - target_w, 1)
+        norm_err = abs(power_error) / max(rated_w, 1.0)
+        reward = round(1.0 - norm_err * 1.6 - anomaly_score * 0.5, 2)
+        relay_command = "HIGH" if (status_str in ["ON", "1", "TRUE"] and power_w <= rated_w * 1.5) else "LOW"
 
         # 5. Persist to Database
         db.save_telemetry(
@@ -836,9 +853,9 @@ def manage_telemetry():
                 "id": appliance_id,
                 "name": app_info["name"],
                 "status": "on" if status_str in ["ON", "1", "TRUE"] else "off",
-                "mode": app_info.get("mode", "maintain"),
+                "mode": mode,
                 "powerW": power_w,
-                "targetPowerW": app_info.get("ratedPowerW", 100.0),
+                "targetPowerW": target_w,
                 "tempC": temperature,
                 "humidityPct": humidity,
                 "voltageV": voltage,
@@ -847,6 +864,9 @@ def manage_telemetry():
                 "anomalyScore": anomaly_score,
                 "isAnomaly": anomaly_score > 0.65,
                 "lastUpdate": now_ms,
+                "predictedPowerW": round(predicted_power, 1),
+                "relayCommand": relay_command,
+                "reward": reward,
             }
             _current_state[appliance_id] = runtime_state
 
@@ -870,6 +890,11 @@ def manage_telemetry():
             "appliance_id": appliance_id,
             "power_w": power_w,
             "anomaly_score": anomaly_score,
+            "predicted_power_w": round(predicted_power, 1),
+            "target_power_w": target_w,
+            "action": mode,
+            "relay_command": relay_command,
+            "reward": reward,
         }), 200
 
     else:
