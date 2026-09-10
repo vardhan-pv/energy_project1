@@ -50,11 +50,13 @@ export function LivePage() {
 
   const points = Number(win);
   const firstAppId = appliances[0]?.id;
-  const base = firstAppId && runtimes[firstAppId] ? runtimes[firstAppId].history.slice(-points) : [];
+  const firstAppHistory = firstAppId && runtimes[firstAppId]?.history ? runtimes[firstAppId].history : [];
+  const base = firstAppHistory.slice(-points);
   const combined = base.map((s, i) => {
     const row: Record<string, number> = { t: s.t };
     for (const id of appliances.map((a) => a.id)) {
-      row[id] = runtimes[id]?.history.slice(-points)[i]?.powerW ?? 0;
+      const appHist = runtimes[id]?.history ?? [];
+      row[id] = appHist.slice(-points)[i]?.powerW ?? 0;
     }
     return row;
   });

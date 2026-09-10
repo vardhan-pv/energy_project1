@@ -59,11 +59,13 @@ function Overview() {
   }
 
   const firstAppId = appliances[0]?.id;
-  const baseHistory = firstAppId && runtimes[firstAppId] ? runtimes[firstAppId].history.slice(-45) : [];
+  const firstAppHistory = firstAppId && runtimes[firstAppId]?.history ? runtimes[firstAppId].history : [];
+  const baseHistory = firstAppHistory.slice(-45);
   const combined = baseHistory.map((s, i) => {
     const row: Record<string, number> = { t: s.t };
     for (const a of appliances) {
-      row[a.id] = runtimes[a.id]?.history.slice(-45)[i]?.powerW ?? 0;
+      const appHist = runtimes[a.id]?.history ?? [];
+      row[a.id] = appHist.slice(-45)[i]?.powerW ?? 0;
     }
     return row;
   });

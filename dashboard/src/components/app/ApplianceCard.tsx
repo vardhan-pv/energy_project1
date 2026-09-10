@@ -171,7 +171,7 @@ export function ApplianceCard({ id, compact = false }: { id: ApplianceId; compac
 
       {!compact ? (
         <div className="-mx-1">
-          <PowerAreaChart data={rt.history.slice(-45)} height={110} />
+          <PowerAreaChart data={(rt.history ?? []).slice(-45)} height={110} />
         </div>
       ) : null}
 
