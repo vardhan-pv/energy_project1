@@ -15,6 +15,10 @@ import {
   User,
   LogOut,
   Wrench,
+  Workflow,
+  Database,
+  Server,
+  Radio,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -26,16 +30,17 @@ import { useEnergy } from "@/lib/energy/store";
 import { fmtClock, fmtW } from "@/lib/energy/format";
 
 const NAV = [
-  { to: "/", label: "Overview", icon: LayoutDashboard, hint: "Everything at a glance" },
-  { to: "/live", label: "Live Monitoring", icon: Activity, hint: "Real-time power readings" },
-  { to: "/appliances", label: "Appliances", icon: PlugZap, hint: "Your four connected devices" },
-  { to: "/predictions", label: "Predictions", icon: LineChart, hint: "What the models expect next" },
-  { to: "/control", label: "Intelligent Control", icon: Sliders, hint: "Safe controls & closed loop" },
-  { to: "/analytics", label: "Energy Analytics", icon: Gauge, hint: "Usage, cost and savings" },
-  { to: "/alerts", label: "Alerts & Safety", icon: BellRing, hint: "Warnings and interlocks" },
-  { to: "/devices", label: "Device / IoT Status", icon: Cpu, hint: "Connection health" },
-  { to: "/history", label: "History", icon: History, hint: "Past days and events" },
-  { to: "/settings", label: "Settings", icon: SettingsIcon, hint: "Tariff, budget, data source" },
+  { to: "/", label: "Overview", icon: LayoutDashboard, hint: "System dashboard & key metrics" },
+  { to: "/live", label: "Live Telemetry", icon: Activity, hint: "ESP32 hardware sensor stream" },
+  { to: "/appliances", label: "Appliances", icon: PlugZap, hint: "Connected appliance models" },
+  { to: "/analytics", label: "Cognitive Analysis", icon: Gauge, hint: "ATF, ERI, DSC, CDI & UBD metrics" },
+  { to: "/predictions", label: "Predictions", icon: LineChart, hint: "ML power forecasting" },
+  { to: "/control", label: "Control Center", icon: Sliders, hint: "RL actions & relay interlocks" },
+  { to: "/history", label: "History", icon: History, hint: "PostgreSQL telemetry & UK-DALE logs" },
+  { to: "/alerts", label: "Alerts & Safety", icon: BellRing, hint: "Real-time safety events" },
+  { to: "/devices", label: "IoT Devices", icon: Cpu, hint: "ESP32 node & pinout status" },
+  { to: "/architecture", label: "System Architecture", icon: Workflow, hint: "Closed-loop system pipeline" },
+  { to: "/settings", label: "Settings", icon: SettingsIcon, hint: "Tariff, budget & API configuration" },
 ] as const;
 
 function NavList({ onNavigate }: { onNavigate?: () => void }) {
@@ -151,21 +156,28 @@ export function AppShell({ children }: { children: ReactNode }) {
           </Sheet>
 
           {settings.useLiveApi ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Badge
-                  variant="outline"
-                  tabIndex={0}
-                  className="border-success/40 bg-success/15 text-success gap-1.5 font-medium"
-                >
-                  <span className="size-1.5 rounded-full bg-success" aria-hidden="true" />
-                  {house ? `${house.name} (${house.id})` : "Live API"}
-                </Badge>
-              </TooltipTrigger>
-              <TooltipContent className="max-w-64">
-                {house ? `${house.name} · ${house.location} · Status: ${house.status}` : "Connected to Live Flask API."}
-              </TooltipContent>
-            </Tooltip>
+            <div className="flex items-center gap-2">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge
+                    variant="outline"
+                    tabIndex={0}
+                    className="border-emerald-500/40 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 gap-1.5 font-medium"
+                  >
+                    <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" aria-hidden="true" />
+                    LIVE HARDWARE
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-64">
+                  {house ? `${house.name} · ${house.location} · Connected to Render PostgreSQL Backend.` : "Connected to Live Backend."}
+                </TooltipContent>
+              </Tooltip>
+              {snapshot.isHardwareLive ? (
+                <span className="hidden xl:inline-flex items-center gap-1 text-[11px] font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                  <Radio className="size-3" /> ESP32 NODE ONLINE
+                </span>
+              ) : null}
+            </div>
           ) : (
             <DemoModeBadge />
           )}

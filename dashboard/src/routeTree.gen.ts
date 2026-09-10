@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AlertsRouteImport } from './routes/alerts'
 import { Route as AnalyticsRouteImport } from './routes/analytics'
 import { Route as AppliancesRouteImport } from './routes/appliances'
+import { Route as ArchitectureRouteImport } from './routes/architecture'
 import { Route as ControlRouteImport } from './routes/control'
 import { Route as DevicesRouteImport } from './routes/devices'
 import { Route as HistoryRouteImport } from './routes/history'
@@ -40,6 +41,11 @@ const AnalyticsRoute = AnalyticsRouteImport.update({
 const AppliancesRoute = AppliancesRouteImport.update({
   id: '/appliances',
   path: '/appliances',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ArchitectureRoute = ArchitectureRouteImport.update({
+  id: '/architecture',
+  path: '/architecture',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ControlRoute = ControlRouteImport.update({
@@ -88,6 +94,7 @@ export interface FileRoutesByFullPath {
   '/alerts': typeof AlertsRoute
   '/analytics': typeof AnalyticsRoute
   '/appliances': typeof AppliancesRoute
+  '/architecture': typeof ArchitectureRoute
   '/control': typeof ControlRoute
   '/devices': typeof DevicesRoute
   '/history': typeof HistoryRoute
@@ -102,6 +109,7 @@ export interface FileRoutesByTo {
   '/alerts': typeof AlertsRoute
   '/analytics': typeof AnalyticsRoute
   '/appliances': typeof AppliancesRoute
+  '/architecture': typeof ArchitectureRoute
   '/control': typeof ControlRoute
   '/devices': typeof DevicesRoute
   '/history': typeof HistoryRoute
@@ -117,6 +125,7 @@ export interface FileRoutesById {
   '/alerts': typeof AlertsRoute
   '/analytics': typeof AnalyticsRoute
   '/appliances': typeof AppliancesRoute
+  '/architecture': typeof ArchitectureRoute
   '/control': typeof ControlRoute
   '/devices': typeof DevicesRoute
   '/history': typeof HistoryRoute
@@ -133,6 +142,7 @@ export interface FileRouteTypes {
     | '/alerts'
     | '/analytics'
     | '/appliances'
+    | '/architecture'
     | '/control'
     | '/devices'
     | '/history'
@@ -147,6 +157,7 @@ export interface FileRouteTypes {
     | '/alerts'
     | '/analytics'
     | '/appliances'
+    | '/architecture'
     | '/control'
     | '/devices'
     | '/history'
@@ -161,6 +172,7 @@ export interface FileRouteTypes {
     | '/alerts'
     | '/analytics'
     | '/appliances'
+    | '/architecture'
     | '/control'
     | '/devices'
     | '/history'
@@ -176,6 +188,7 @@ export interface RootRouteChildren {
   AlertsRoute: typeof AlertsRoute
   AnalyticsRoute: typeof AnalyticsRoute
   AppliancesRoute: typeof AppliancesRoute
+  ArchitectureRoute: typeof ArchitectureRoute
   ControlRoute: typeof ControlRoute
   DevicesRoute: typeof DevicesRoute
   HistoryRoute: typeof HistoryRoute
@@ -214,6 +227,13 @@ declare module '@tanstack/react-router' {
       path: '/appliances'
       fullPath: '/appliances'
       preLoaderRoute: typeof AppliancesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/architecture': {
+      id: '/architecture'
+      path: '/architecture'
+      fullPath: '/architecture'
+      preLoaderRoute: typeof ArchitectureRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/control': {
@@ -280,6 +300,7 @@ const rootRouteChildren: RootRouteChildren = {
   AlertsRoute: AlertsRoute,
   AnalyticsRoute: AnalyticsRoute,
   AppliancesRoute: AppliancesRoute,
+  ArchitectureRoute: ArchitectureRoute,
   ControlRoute: ControlRoute,
   DevicesRoute: DevicesRoute,
   HistoryRoute: HistoryRoute,
