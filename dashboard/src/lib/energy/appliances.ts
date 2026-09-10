@@ -93,3 +93,67 @@ export const APPLIANCE_MAP: Record<ApplianceId, ApplianceProfile> = Object.fromE
 ) as Record<ApplianceId, ApplianceProfile>;
 
 export const APPLIANCE_IDS = APPLIANCES.map((a) => a.id);
+
+export const DEFAULT_FALLBACK_PROFILE: ApplianceProfile = {
+  id: "unknown",
+  name: "Connected Appliance",
+  room: "Main Room",
+  icon: "zap",
+  ratedPowerW: 100,
+  minPowerW: 0,
+  maxPowerW: 250,
+  criticalAlwaysOn: false,
+  hasTemperature: false,
+  description: "Monitored electrical device.",
+  model: {
+    name: "Random Forest",
+    version: "v1.0-trained",
+    trainedOn: "Hardware Telemetry",
+    accuracyPct: 95.0,
+  },
+};
+
+export function normalizeApplianceProfile(raw: any): ApplianceProfile {
+  if (!raw) return { ...DEFAULT_FALLBACK_PROFILE };
+  const id = raw.id || raw.appliance_id || "app-generic";
+  const preset = APPLIANCE_MAP[id as ApplianceId];
+  const name = raw.name || raw.appliance_name || preset?.name || (id.startsWith("APP-") ? `Appliance ${id.slice(-4)}` : id);
+  const ratedPowerW = Number(raw.ratedPowerW ?? raw.rated_power_w ?? preset?.ratedPowerW ?? 100) || 100;
+  const minPowerW = Number(raw.minPowerW ?? raw.min_power_w ?? preset?.minPowerW ?? 0) || 0;
+  const maxPowerW = Number(raw.maxPowerW ?? raw.max_power_w ?? preset?.maxPowerW ?? ratedPowerW * 2) || (ratedPowerW * 2);
+  const room = raw.room || preset?.room || "Main Room";
+  const icon = raw.icon || preset?.icon || "zap";
+  const criticalAlwaysOn = Boolean(raw.criticalAlwaysOn ?? raw.critical_always_on ?? preset?.criticalAlwaysOn ?? false);
+  const hasTemperature = Boolean(raw.hasTemperature ?? raw.has_temperature ?? preset?.hasTemperature ?? false);
+  const description = raw.description || preset?.description || "Monitored electrical device";
+  const model = raw.model || preset?.model || {
+    name: "Random Forest",
+    version: "v1.0-trained",
+    trainedOn: "UK-DALE / Real Telemetry",
+    accuracyPct: 95.0,
+  };
+
+  return {
+    id: id as ApplianceId,
+    name,
+    room,
+    icon,
+    ratedPowerW,
+    minPowerW,
+    maxPowerW,
+    criticalAlwaysOn,
+    hasTemperature,
+    description,
+    model,
+  };
+}
+
+export function getApplianceProfileOrDefault(id?: string, customList?: ApplianceProfile[]): ApplianceProfile {
+  if (!id) return { ...DEFAULT_FALLBACK_PROFILE };
+  if (APPLIANCE_MAP[id as ApplianceId]) return APPLIANCE_MAP[id as ApplianceId];
+  if (customList && Array.isArray(customList)) {
+    const found = customList.find((a) => a && a.id === id);
+    if (found) return normalizeApplianceProfile(found);
+  }
+  return normalizeApplianceProfile({ id });
+}

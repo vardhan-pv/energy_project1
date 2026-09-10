@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { APPLIANCES, APPLIANCE_MAP } from "./appliances";
+import { APPLIANCES, APPLIANCE_MAP, getApplianceProfileOrDefault, normalizeApplianceProfile } from "./appliances";
 import { createHttpDataSource, type EnergyDataSource, type UserProfile } from "./api";
 import {
   controlLoop,
@@ -247,7 +247,7 @@ async function pollLiveApi(
     ]);
 
     const houseData = houseRes ?? defaultHouse;
-    const appliancesData = Array.isArray(appliancesRes) ? appliancesRes : [];
+    const appliancesData = Array.isArray(appliancesRes) ? appliancesRes.map(normalizeApplianceProfile) : [];
     const telemetry = Array.isArray(telemetryRes) ? telemetryRes : [];
     const controlLoopData = Array.isArray(controlLoopRes) ? controlLoopRes : [];
     const alertsData = Array.isArray(alertsRes) ? alertsRes : [];
@@ -644,22 +644,7 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
 
   const getApplianceProfile = useCallback(
     (id: string): ApplianceProfile => {
-      if (APPLIANCE_MAP[id as ApplianceId]) return APPLIANCE_MAP[id as ApplianceId];
-      const found = state?.appliances.find((a) => a.id === id);
-      if (found) return found;
-      return {
-        id: id as ApplianceId,
-        name: id,
-        room: "Home",
-        icon: "laptop",
-        ratedPowerW: 50,
-        minPowerW: 0,
-        maxPowerW: 100,
-        criticalAlwaysOn: false,
-        hasTemperature: false,
-        description: "Appliance",
-        model: { name: "Model", version: "v1.0", trainedOn: "Data", accuracyPct: 90 },
-      };
+      return getApplianceProfileOrDefault(id, state?.appliances);
     },
     [state?.appliances],
   );

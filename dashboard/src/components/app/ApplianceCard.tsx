@@ -73,8 +73,8 @@ export function ApplianceCard({ id, compact = false }: { id: ApplianceId; compac
             <ApplianceIcon icon={profile.icon} />
           </div>
           <div>
-            <h3 className="leading-tight font-semibold text-sm sm:text-base">{profile.name}</h3>
-            <p className="text-xs text-muted-foreground">{profile.room} · Rated {profile.ratedPowerW} W</p>
+            <h3 className="leading-tight font-semibold text-sm sm:text-base">{profile?.name ?? "Appliance"}</h3>
+            <p className="text-xs text-muted-foreground">{profile?.room ?? "Main Room"} · Rated {profile?.ratedPowerW ?? 100} W</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -119,7 +119,7 @@ export function ApplianceCard({ id, compact = false }: { id: ApplianceId; compac
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Metric
           label="Model Power"
-          value={settings.useLiveApi && !rt.isHardware ? `${profile.ratedPowerW.toFixed(0)} W (rated)` : fmtW(rt.powerW, 1)}
+          value={settings.useLiveApi && !rt.isHardware ? `${(profile?.ratedPowerW ?? 100).toFixed(0)} W (rated)` : fmtW(rt.powerW, 1)}
         />
         <Metric
           label="Voltage"

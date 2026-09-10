@@ -6,7 +6,7 @@
  * the whole engine can be replaced by a real Flask/Python API later without
  * touching the UI (see src/lib/energy/api.ts).
  */
-import { APPLIANCE_MAP } from "./appliances";
+import { APPLIANCE_MAP, getApplianceProfileOrDefault } from "./appliances";
 import type {
   ApplianceId,
   ApplianceProfile,
@@ -33,7 +33,8 @@ function rand(...parts: number[]): number {
 
 function idSeed(id: ApplianceId): number {
   let n = 0;
-  for (let i = 0; i < id.length; i++) n = (n * 31 + id.charCodeAt(i)) >>> 0;
+  const str = String(id ?? "default");
+  for (let i = 0; i < str.length; i++) n = (n * 31 + str.charCodeAt(i)) >>> 0;
   return n;
 }
 
@@ -52,9 +53,14 @@ export function targetPowerW(
   mode: ControlMode,
   status: ApplianceRuntime["status"],
 ): number {
+  const safeProfile = profile || getApplianceProfileOrDefault();
+  const rated = safeProfile.ratedPowerW ?? 100;
+  const minP = safeProfile.minPowerW ?? 0;
+  const maxP = safeProfile.maxPowerW ?? 200;
+
   if (status === "off") return 0;
-  if (status === "standby") return Math.max(profile.minPowerW, profile.ratedPowerW * 0.06);
-  return clamp(profile.ratedPowerW * MODE_FACTOR[mode], profile.minPowerW, profile.maxPowerW);
+  if (status === "standby") return Math.max(minP, rated * 0.06);
+  return clamp(rated * (MODE_FACTOR[mode] ?? 1), minP, maxP);
 }
 
 /** Hour-of-day usage shape (0-1), makes charts look like a real household. */
@@ -68,6 +74,8 @@ function dailyShape(id: ApplianceId, hour: number): number {
       return hour >= 11 && hour <= 17 ? 1 : hour >= 18 && hour <= 21 ? 0.6 : 0.15;
     case "fridge":
       return 0.85 + 0.15 * Math.sin(((hour - 6) / 24) * Math.PI * 2);
+    default:
+      return hour >= 8 && hour <= 22 ? 0.8 : 0.2;
   }
 }
 
@@ -97,7 +105,8 @@ export interface TickResult {
 }
 
 export function simulateTick(input: TickInput): TickResult {
-  const { profile, status, mode, t, tick, faultActive } = input;
+  const profile = getApplianceProfileOrDefault(input.profile?.id);
+  const { status, mode, t, tick, faultActive } = input;
   const seed = idSeed(profile.id);
   const hour = new Date(t).getHours();
   const target = targetPowerW(profile, mode, status);
@@ -147,11 +156,12 @@ export function seedHistory(
   points: number,
   stepMs: number,
 ): TelemetrySample[] {
+  const safeProfile = getApplianceProfileOrDefault(profile?.id);
   const out: TelemetrySample[] = [];
   let energy = 0;
   for (let i = points; i > 0; i--) {
     const t = now - i * stepMs;
-    const r = simulateTick({ profile, status, mode, t, tick: Math.floor(t / stepMs) });
+    const r = simulateTick({ profile: safeProfile, status, mode, t, tick: Math.floor(t / stepMs) });
     energy += (r.powerW * (stepMs / 3600000)) / 1000;
     out.push({
       t,
@@ -166,7 +176,7 @@ export function seedHistory(
 
 /** Energy already used today before the app was opened (deterministic). */
 export function seedEnergyToday(id: ApplianceId, now: number): number {
-  const profile = APPLIANCE_MAP[id];
+  const profile = getApplianceProfileOrDefault(id);
   const hoursElapsed = new Date(now).getHours() + new Date(now).getMinutes() / 60;
   const avg = profile.ratedPowerW * (0.45 + rand(idSeed(id), 11) * 0.25);
   return Math.round(((avg * hoursElapsed) / 1000) * 1000) / 1000;
@@ -178,8 +188,8 @@ export function predict(
   horizonMinutes: number,
   now: number,
 ): Prediction {
-  const profile = APPLIANCE_MAP[runtime.id];
-  const seed = idSeed(runtime.id);
+  const profile = getApplianceProfileOrDefault(runtime?.id);
+  const seed = idSeed(runtime?.id ?? "unknown");
   const steps = 12;
   const stepMs = (horizonMinutes * 60000) / steps;
   const curve: Prediction["curve"] = [];
@@ -207,9 +217,9 @@ export function predict(
   }
 
   const avgW = sum / steps;
-  const baseConfidence = profile.model.accuracyPct - horizonMinutes * 0.06;
+  const baseConfidence = (profile.model?.accuracyPct ?? 95) - horizonMinutes * 0.06;
   const confidencePct = clamp(
-    Math.round(baseConfidence - runtime.anomalyScore * 22 + (rand(seed, 42) - 0.5) * 2),
+    Math.round(baseConfidence - (runtime?.anomalyScore ?? 0) * 22 + (rand(seed, 42) - 0.5) * 2),
     55,
     99,
   );
@@ -249,12 +259,12 @@ export function controlLoop(
   iterations: number,
   safetyInterlocks: boolean,
 ): ControlLoopState {
-  const profile = APPLIANCE_MAP[runtime.id];
-  const target = runtime.targetPowerW;
-  const measured = runtime.powerW;
+  const profile = getApplianceProfileOrDefault(runtime?.id);
+  const target = runtime.targetPowerW ?? profile.ratedPowerW;
+  const measured = runtime.powerW ?? 0;
   const error = Math.round((measured - target) * 10) / 10;
   const normErr = Math.abs(error) / Math.max(profile.ratedPowerW, 1);
-  const reward = Math.round((1 - normErr * 1.6 - runtime.anomalyScore * 0.5) * 100) / 100;
+  const reward = Math.round((1 - normErr * 1.6 - (runtime.anomalyScore ?? 0) * 0.5) * 100) / 100;
   const success = Math.abs(error) <= Math.max(4, profile.ratedPowerW * 0.12);
 
   const safetyStatus: ControlLoopState["safetyStatus"] =
