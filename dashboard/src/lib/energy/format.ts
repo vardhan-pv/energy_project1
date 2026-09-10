@@ -1,27 +1,31 @@
-export function fmtW(w: number | undefined, digits = 0): string {
-  if (w === undefined || Number.isNaN(w)) return "—";
+export function fmtW(w: number | undefined | null, digits = 0): string {
+  if (w === undefined || w === null || Number.isNaN(w)) return "—";
   if (w >= 1000) return `${(w / 1000).toFixed(2)} kW`;
   return `${w.toFixed(digits)} W`;
 }
 
-export function fmtKwh(kwh: number | undefined, digits = 2): string {
-  if (kwh === undefined || Number.isNaN(kwh)) return "—";
+export function fmtKwh(kwh: number | undefined | null, digits = 2): string {
+  if (kwh === undefined || kwh === null || Number.isNaN(kwh)) return "—";
   return `${kwh.toFixed(digits)} kWh`;
 }
 
-export function fmtMoney(amount: number, currency = "$"): string {
+export function fmtMoney(amount: number | undefined | null, currency = "$"): string {
+  if (amount === undefined || amount === null || Number.isNaN(amount)) return `${currency}0.00`;
   return `${currency}${amount.toFixed(2)}`;
 }
 
-export function fmtTemp(c?: number): string {
-  return c === undefined ? "—" : `${c.toFixed(1)} °C`;
+export function fmtTemp(c?: number | null): string {
+  if (c === undefined || c === null || Number.isNaN(c)) return "—";
+  return `${c.toFixed(1)} °C`;
 }
 
-export function fmtTime(t: number): string {
+export function fmtTime(t?: number | null): string {
+  if (!t || Number.isNaN(t)) return "—";
   return new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-export function fmtClock(t: number): string {
+export function fmtClock(t?: number | null): string {
+  if (!t || Number.isNaN(t)) return "--:--:--";
   return new Date(t).toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",
@@ -29,7 +33,8 @@ export function fmtClock(t: number): string {
   });
 }
 
-export function fmtRelative(t: number, now: number): string {
+export function fmtRelative(t?: number | null, now = Date.now()): string {
+  if (!t || Number.isNaN(t)) return "—";
   const s = Math.max(0, Math.round((now - t) / 1000));
   if (s < 5) return "just now";
   if (s < 60) return `${s}s ago`;

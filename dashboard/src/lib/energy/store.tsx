@@ -222,27 +222,48 @@ async function pollLiveApi(
   settings: Settings,
 ): Promise<Partial<EngineState> | null> {
   try {
-    const housePromise = ds.getHouse();
-    const appliancesPromise = ds.listAppliances();
-    const [houseData, appliancesData, telemetry, controlLoopData, alertsData] = await Promise.all([
+    const defaultHouse: House = {
+      id: "HOUSE_MAIN",
+      name: "Primary Installation",
+      sqft: 2200,
+      location: "Main Location",
+      hvacType: "Heat Pump + Solar",
+      peakTariffRate: 0.28,
+      offPeakTariffRate: 0.12,
+    };
+
+    const housePromise = ds.getHouse().catch(() => defaultHouse);
+    const appliancesPromise = ds.listAppliances().catch(() => []);
+    const telemetryPromise = ds.getTelemetry().catch(() => []);
+    const controlLoopPromise = ds.getControlLoop().catch(() => []);
+    const alertsPromise = ds.getAlerts().catch(() => []);
+
+    const [houseRes, appliancesRes, telemetryRes, controlLoopRes, alertsRes] = await Promise.all([
       housePromise,
       appliancesPromise,
-      ds.getTelemetry(),
-      ds.getControlLoop(),
-      ds.getAlerts(),
+      telemetryPromise,
+      controlLoopPromise,
+      alertsPromise,
     ]);
+
+    const houseData = houseRes ?? defaultHouse;
+    const appliancesData = Array.isArray(appliancesRes) ? appliancesRes : [];
+    const telemetry = Array.isArray(telemetryRes) ? telemetryRes : [];
+    const controlLoopData = Array.isArray(controlLoopRes) ? controlLoopRes : [];
+    const alertsData = Array.isArray(alertsRes) ? alertsRes : [];
 
     const now = Date.now();
     const runtimes = { ...(prev?.runtimes ?? {}) };
     const loops = { ...(prev?.loops ?? {}) };
 
     for (const rt of telemetry) {
+      if (!rt || !rt.id) continue;
       const id = rt.id;
       const rawRt = rt as any;
       // Real ESP32 hardware telemetry contains voltage/voltageV, current/currentA, or humidity/humidityPct set by POST endpoint
       const isHardware = rawRt.voltageV !== undefined || rawRt.voltage !== undefined || rawRt.humidityPct !== undefined || rawRt.humidity !== undefined;
       const prevHistory = prev?.runtimes?.[id]?.history ?? [];
-      const powerW = isHardware ? (rt.powerW ?? 0) : 0;
+      const powerW = isHardware ? (rt.powerW ?? 0) : (rt.powerW ?? 0);
       const tempC = rawRt.temperatureC ?? rawRt.tempC ?? rawRt.temperature;
       const humidityPct = rawRt.humidityPct ?? rawRt.humidity;
       const voltageV = rawRt.voltageV ?? rawRt.voltage;
@@ -266,14 +287,16 @@ async function pollLiveApi(
         voltageV,
         currentA,
         isHardware,
-        online: isHardware ? (rt.online ?? true) : false,
+        online: isHardware ? (rt.online ?? true) : (rt.online ?? false),
         history,
         lastSeen: rawRt.lastUpdate ?? rt.lastSeen ?? now,
       };
     }
 
     for (const cl of controlLoopData) {
-      loops[cl.id] = cl;
+      if (cl && cl.id) {
+        loops[cl.id] = cl;
+      }
     }
 
     // Build events from alerts
@@ -281,14 +304,15 @@ async function pollLiveApi(
     if (alertsData.length > 0) {
       const existingIds = new Set((prev?.events ?? []).map((e) => e.id));
       for (const alert of alertsData.slice(0, 5)) {
+        if (!alert) continue;
         const evId = `api-${alert.id}`;
         if (!existingIds.has(evId)) {
           newEvents.push({
             id: evId,
-            t: alert.t,
+            t: alert.t ?? now,
             severity: alert.severity === "critical" ? "critical" : "warning",
-            title: alert.title,
-            detail: alert.detail,
+            title: alert.title ?? "Alert",
+            detail: alert.detail ?? "",
             source: "safety",
             appliance: alert.appliance,
           });
