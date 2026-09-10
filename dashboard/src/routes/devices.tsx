@@ -1,10 +1,12 @@
+import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Cpu, Database, Radio, RefreshCw, ShieldCheck, Wifi, Zap } from "lucide-react";
+import { Copy, Cpu, KeyRound, RefreshCw, ShieldCheck, Zap } from "lucide-react";
 import { toast } from "sonner";
-import { EmptyState, LoadingPanel, PageHeader } from "@/components/app/primitives";
+import { LoadingPanel, PageHeader } from "@/components/app/primitives";
 import { useEnergy } from "@/lib/energy/store";
+import { createHttpDataSource } from "@/lib/energy/api";
 
 export const Route = createFileRoute("/devices")({
   head: () => ({
@@ -17,7 +19,9 @@ export const Route = createFileRoute("/devices")({
 });
 
 export function DevicesPage() {
-  const { ready, runtimes, snapshot, settings, house } = useEnergy();
+  const { ready, runtimes, snapshot, settings, house, token } = useEnergy();
+  const [resetting, setResetting] = useState(false);
+  const [newSecret, setNewSecret] = useState<string | null>(null);
 
   if (!ready || house?.dataStatus === "PENDING") {
     return (
@@ -29,6 +33,25 @@ export function DevicesPage() {
   }
 
   const activeHardwareRt = Object.values(runtimes).find((r) => r.isHardware);
+  const deviceId = activeHardwareRt?.id || "DEV-638C71FE";
+
+  const handleResetSecret = async () => {
+    try {
+      setResetting(true);
+      const ds = createHttpDataSource(settings.apiBaseUrl, () => token);
+      const res = await ds.resetDeviceSecret(deviceId);
+      if (res && res.ok && res.new_secret) {
+        setNewSecret(res.new_secret);
+        toast.success("Device secret regenerated successfully! Copy it to your ESP32 code.");
+      } else {
+        toast.error("Failed to regenerate device secret.");
+      }
+    } catch (err: any) {
+      toast.error(err?.message || "Error regenerating secret");
+    } finally {
+      setResetting(false);
+    }
+  };
 
   return (
     <>
@@ -72,10 +95,52 @@ export function DevicesPage() {
               Device Type: ESP32 DevKit V1
             </span>
             <span className="bg-muted px-2.5 py-1 rounded border">
-              Device ID: {activeHardwareRt?.id || "DEV-638C71FE"}
+              Device ID: {deviceId}
             </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleResetSecret}
+              disabled={resetting}
+              className="gap-1.5 text-xs h-7"
+            >
+              <KeyRound className="size-3.5 text-amber-500" />
+              {resetting ? "Resetting..." : "Regenerate Secret"}
+            </Button>
           </div>
         </div>
+
+        {/* New Secret Modal / Alert Banner */}
+        {newSecret ? (
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
+                <KeyRound className="size-4" />
+                New Device Secret Regenerated
+              </span>
+              <Button
+                variant="ghost"
+                size="xs"
+                onClick={() => {
+                  navigator.clipboard.writeText(newSecret);
+                  toast.success("Secret copied to clipboard!");
+                }}
+                className="gap-1 text-xs"
+              >
+                <Copy className="size-3" /> Copy
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Copy this secret into your ESP32 Arduino C++ code line: <code className="font-mono bg-background px-1 py-0.5 rounded">const char* DEVICE_SECRET = "{newSecret}";</code>
+            </p>
+            <div className="font-mono text-sm font-bold bg-background p-2 rounded border border-border select-all break-all">
+              {newSecret}
+            </div>
+            <p className="text-[11px] text-amber-600 dark:text-amber-400">
+              ⚠️ Important: This secret is only shown once for security. Save it to your ESP32 before closing.
+            </p>
+          </div>
+        ) : null}
 
         {/* Device Metadata Grid */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">

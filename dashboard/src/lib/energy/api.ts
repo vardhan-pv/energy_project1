@@ -47,6 +47,7 @@ export interface EnergyDataSource {
   login(identifier: string, password: string): Promise<{ ok: boolean; user: UserProfile; token: string }>;
   updateProfile(name?: string, email?: string): Promise<{ ok: boolean; user: UserProfile }>;
   updateHouse(houseId: string, houseName?: string, location?: string): Promise<{ ok: boolean; house: House }>;
+  resetDeviceSecret(deviceId: string): Promise<{ ok: boolean; device_id: string; new_secret: string }>;
   deleteAppliance(applianceId: string): Promise<{ ok: boolean }>;
   getHouse(): Promise<House>;
   listAppliances(): Promise<ApplianceProfile[]>;
@@ -130,6 +131,10 @@ export function createHttpDataSource(baseUrl: string, getToken?: () => string | 
         body: JSON.stringify({ device_type: deviceType, device_name: deviceName, mac_address: macAddress }),
       }),
     getDevices: () => json<any[]>("/api/devices"),
+    resetDeviceSecret: (deviceId) =>
+      json<{ ok: boolean; device_id: string; new_secret: string }>(`/api/devices/${deviceId}/reset-secret`, {
+        method: "POST",
+      }),
     createAppliance: (deviceId, name, type, ratedPowerW) =>
       json<{ ok: boolean; appliance: any }>("/api/appliances", {
         method: "POST",

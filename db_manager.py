@@ -529,6 +529,16 @@ def get_house_devices(house_id: str) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def reset_device_secret(device_id: str) -> str:
+    new_secret = generate_device_secret()
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE devices SET device_secret = ? WHERE device_id = ?;", (new_secret, device_id))
+    conn.commit()
+    conn.close()
+    return new_secret
+
+
 # ---------------------------------------------------------------------------
 # Appliance CRUD
 # ---------------------------------------------------------------------------

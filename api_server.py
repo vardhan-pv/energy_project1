@@ -661,6 +661,23 @@ def manage_devices():
         return jsonify(devs)
 
 
+@app.route("/api/devices/<device_id>/reset-secret", methods=["POST"])
+def reset_device_secret_endpoint(device_id):
+    user_id = get_auth_user_id()
+    if not user_id:
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+    dev = db.get_device(device_id)
+    if not dev:
+        return jsonify({"ok": False, "error": "Device not found"}), 404
+    houses = db.get_user_houses(user_id)
+    user_house_ids = {h["id"] for h in houses}
+    if dev.get("house_id") not in user_house_ids:
+        return jsonify({"ok": False, "error": "Forbidden"}), 403
+
+    new_secret = db.reset_device_secret(device_id)
+    return jsonify({"ok": True, "device_id": device_id, "new_secret": new_secret})
+
+
 @app.route("/api/appliances", methods=["GET", "POST"])
 def manage_appliances():
     user_id = get_auth_user_id()
