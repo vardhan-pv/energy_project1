@@ -456,7 +456,9 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
       if (result) {
         setState((prev) => {
           if (!prev) return result as EngineState;
-          const cleanedEvents = prev.events.filter((e) => e.title !== "API connection lost");
+          const cleanedEvents = prev.events.filter(
+            (e) => e.title !== "API connection lost" && e.title !== "Connecting to Live API",
+          );
           return {
             ...prev,
             ...result,
