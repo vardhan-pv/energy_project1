@@ -768,202 +768,222 @@ def get_house():
 def manage_telemetry():
     """Manage telemetry: GET returns ApplianceRuntime[] for dashboard; POST ingests ESP32 device telemetry."""
     if request.method == "POST":
-        # 1. Device Credential Extraction
-        dev_id = request.headers.get("X-Device-Id") or request.headers.get("Device-Id")
-        dev_secret = request.headers.get("X-Device-Secret") or request.headers.get("X-Device-Token") or request.headers.get("Device-Secret")
-
-        data = request.get_json(force=True, silent=True) or {}
-        if not dev_id:
-            dev_id = data.get("device_id")
-        if not dev_secret:
-            dev_secret = data.get("device_secret") or data.get("device_token")
-
-        if not dev_id or not dev_secret:
-            return jsonify({"ok": False, "error": "Device credentials required (X-Device-Id & X-Device-Secret headers)"}), 401
-
-        dev_record = db.get_device_by_credentials(dev_id, dev_secret)
-        if not dev_record:
-            # Defensive auto-recovery for physical hardware node (DEV-638C71FE or registered device IDs)
-            dev_by_id = db.get_device(dev_id)
-            if dev_by_id:
-                house_id = dev_by_id.get("house_id")
-                if not house_id:
-                    all_houses = db.get_all_houses()
-                    house_id = all_houses[0]["id"] if all_houses else "HOUSE_MAIN"
-                
-                # Auto-sync the device secret in DB so future lookups succeed instantly
-                try:
-                    conn = db.get_db()
-                    cursor = conn.cursor()
-                    cursor.execute("UPDATE devices SET device_secret = ? WHERE device_id = ?;", (dev_secret.strip(), dev_id.strip()))
-                    conn.commit()
-                    conn.close()
-                except Exception:
-                    pass
-                
-                dev_record = db.get_device_by_credentials(dev_id, dev_secret) or {
-                    "device_id": dev_id,
-                    "house_id": house_id,
-                    "user_id": dev_by_id.get("user_id", "USR-ADMIN001"),
-                    "device_type": dev_by_id.get("device_type", "ESP32"),
-                    "device_name": dev_by_id.get("device_name", "ESP32 Main Node"),
-                    "status": "ONLINE",
-                    "device_secret": dev_secret,
-                }
-            else:
-                # Fresh database without device record: auto-provision device DEV-638C71FE for default house
-                all_houses = db.get_all_houses()
-                if not all_houses:
-                    # Create initial house if DB is empty
-                    db.create_house("HOUSE_MAIN", "USR-ADMIN001", "Primary House", "Main Location")
-                    all_houses = db.get_all_houses()
-                house_id = all_houses[0]["id"]
-                dev_record = db.create_device(house_id, "ESP32", "ESP32 Main Node", mac_address=None, device_secret=dev_secret.strip())
-                dev_record["user_id"] = all_houses[0].get("user_id", "USR-ADMIN001")
-
-        if dev_record.get("status") == "DISABLED":
-            return jsonify({"ok": False, "error": "Device is disabled"}), 403
-
-        house_id = dev_record["house_id"]
-        user_id = dev_record.get("user_id", "USR-ADMIN001")
-
-        # 2. Extract & Validate Appliance
-        appliance_id = data.get("appliance_id") or data.get("id")
-        if not appliance_id:
-            return jsonify({"ok": False, "error": "appliance_id is required"}), 400
-
-        house_apps = db.get_house_appliances(house_id)
-        house_app_map = {a["id"]: a for a in house_apps}
-
-        if appliance_id not in house_app_map:
-            # Auto-provision appliance_id (e.g. APP-79290D01) under this house and device
-            try:
-                created_app = db.create_appliance(house_id, dev_id, appliance_id, "generic", 100.0)
-                house_app_map[appliance_id] = created_app
-            except Exception:
-                house_app_map[appliance_id] = {
-                    "id": appliance_id,
-                    "house_id": house_id,
-                    "device_id": dev_id,
-                    "appliance_name": appliance_id,
-                    "appliance_type": "generic",
-                    "rated_power_w": 100.0,
-                    "ratedPowerW": 100.0,
-                }
-
-        app_info = house_app_map[appliance_id]
-
-        # 3. Extract & Validate Reading Values
         try:
-            voltage = float(data.get("voltage", 230.0))
-            current = float(data.get("current", 0.0))
-            power_w = float(data.get("power_w") if data.get("power_w") is not None else data.get("powerW", 0.0))
-            energy_kwh = float(data.get("energy_kwh") if data.get("energy_kwh") is not None else data.get("energyKwh", 0.0))
-            temperature = float(data.get("temperature", 25.0))
-            humidity = float(data.get("humidity", 50.0))
-            status_str = str(data.get("status", "ON")).upper()
-        except (ValueError, TypeError):
-            return jsonify({"ok": False, "error": "Malformed numeric telemetry values"}), 400
+            # 1. Device Credential Extraction
+            dev_id = request.headers.get("X-Device-Id") or request.headers.get("Device-Id")
+            dev_secret = request.headers.get("X-Device-Secret") or request.headers.get("X-Device-Token") or request.headers.get("Device-Secret")
 
-        # 4. Anomaly Detection & ML Updates
-        atype = app_info.get("type", "generic").lower()
-        model_id = atype if atype in APPLIANCE_IDS else "laptop"
-        features = {
-            "power_w": power_w,
-            "status": 1 if status_str in ["ON", "1", "TRUE"] else 0,
-            "hour": datetime.now().hour,
-            "day_of_week": datetime.now().weekday(),
-            "is_weekend": 1 if datetime.now().weekday() >= 5 else 0,
-            "month": datetime.now().month,
-            "power_lag_1": power_w,
-            "power_lag_5": power_w,
-            "power_rolling_mean": power_w,
-            "power_rolling_max": power_w,
-        }
-        anomaly_score = _anomaly_score(model_id, features)
-        predicted_power = _predict_power(model_id, features)
-        if predicted_power is None:
-            predicted_power = power_w
+            data = request.get_json(force=True, silent=True) or {}
+            if not dev_id:
+                dev_id = data.get("device_id")
+            if not dev_secret:
+                dev_secret = data.get("device_secret") or data.get("device_token")
 
-        # RL Decision Core & Relay Command Calculation
-        rated_w = float(app_info.get("ratedPowerW") or 100.0)
-        mode = app_info.get("mode", "maintain")
-        target_w = rated_w
-        if mode in ["reduce", "eco"]:
-            target_w = round(rated_w * 0.75, 1)
-        elif mode == "increase":
-            target_w = round(rated_w * 1.2, 1)
+            if not dev_id or not dev_secret:
+                return jsonify({"ok": False, "error": "Device credentials required (X-Device-Id & X-Device-Secret headers)"}), 401
 
-        power_error = round(power_w - target_w, 1)
-        norm_err = abs(power_error) / max(rated_w, 1.0)
-        reward = round(1.0 - norm_err * 1.6 - anomaly_score * 0.5, 2)
-        relay_command = "HIGH" if (status_str in ["ON", "1", "TRUE"] and power_w <= rated_w * 1.5) else "LOW"
+            dev_record = db.get_device_by_credentials(dev_id, dev_secret)
+            if not dev_record:
+                # Defensive auto-recovery for physical hardware node (DEV-638C71FE or registered device IDs)
+                dev_by_id = db.get_device(dev_id)
+                if dev_by_id:
+                    house_id = dev_by_id.get("house_id")
+                    if not house_id:
+                        all_houses = db.get_all_houses()
+                        house_id = all_houses[0]["id"] if all_houses else "HOUSE_MAIN"
+                    
+                    # Auto-sync the device secret in DB so future lookups succeed instantly
+                    try:
+                        conn = db.get_db()
+                        cursor = conn.cursor()
+                        cursor.execute("UPDATE devices SET device_secret = ? WHERE device_id = ?;", (dev_secret.strip(), dev_id.strip()))
+                        conn.commit()
+                        conn.close()
+                    except Exception:
+                        pass
+                    
+                    dev_record = db.get_device_by_credentials(dev_id, dev_secret) or {
+                        "device_id": dev_id,
+                        "house_id": house_id,
+                        "user_id": dev_by_id.get("user_id", "USR-ADMIN001"),
+                        "device_type": dev_by_id.get("device_type", "ESP32"),
+                        "device_name": dev_by_id.get("device_name", "ESP32 Main Node"),
+                        "status": "ONLINE",
+                        "device_secret": dev_secret,
+                    }
+                else:
+                    # Fresh database without device record: auto-provision device DEV-638C71FE for default house
+                    all_houses = db.get_all_houses()
+                    if not all_houses:
+                        # Create initial house if DB is empty
+                        db.create_house("HOUSE_MAIN", "USR-ADMIN001", "Primary House", "Main Location")
+                        all_houses = db.get_all_houses()
+                    house_id = all_houses[0]["id"]
+                    dev_record = db.create_device(house_id, "ESP32", "ESP32 Main Node", mac_address=None, device_secret=dev_secret.strip())
+                    dev_record["user_id"] = all_houses[0].get("user_id", "USR-ADMIN001")
 
-        # 5. Persist to Database
-        db.save_telemetry(
-            user_id=user_id,
-            house_id=house_id,
-            appliance_id=appliance_id,
-            voltage=voltage,
-            current=current,
-            power_w=power_w,
-            energy_kwh=energy_kwh,
-            temperature=temperature,
-            humidity=humidity,
-            status=status_str,
-            anomaly_score=anomaly_score,
-        )
+            if dev_record.get("status") == "DISABLED":
+                return jsonify({"ok": False, "error": "Device is disabled"}), 403
 
-        # 6. Update Real-Time Runtime State & Memory Buffers
-        now_ms = int(time.time() * 1000)
-        with _lock:
-            runtime_state = {
-                "id": appliance_id,
-                "name": app_info["name"],
-                "status": "on" if status_str in ["ON", "1", "TRUE"] else "off",
-                "mode": mode,
-                "powerW": power_w,
-                "targetPowerW": target_w,
-                "tempC": temperature,
-                "humidityPct": humidity,
-                "voltageV": voltage,
-                "currentA": current,
-                "energyKwh": energy_kwh,
-                "anomalyScore": anomaly_score,
-                "isAnomaly": anomaly_score > 0.65,
-                "lastUpdate": now_ms,
-                "predictedPowerW": round(predicted_power, 1),
-                "relayCommand": relay_command,
-                "reward": reward,
-            }
-            _current_state[appliance_id] = runtime_state
+            house_id = dev_record["house_id"]
+            user_id = dev_record.get("user_id", "USR-ADMIN001")
 
-            if appliance_id not in _telemetry_buffers:
-                _telemetry_buffers[appliance_id] = collections.deque(maxlen=100)
-            _telemetry_buffers[appliance_id].append({
-                "t": now_ms,
+            # 2. Extract & Validate Appliance
+            appliance_id = data.get("appliance_id") or data.get("id")
+            if not appliance_id:
+                return jsonify({"ok": False, "error": "appliance_id is required"}), 400
+
+            house_apps = db.get_house_appliances(house_id)
+            house_app_map = {a["id"]: a for a in house_apps}
+
+            if appliance_id not in house_app_map:
+                # Auto-provision appliance_id (e.g. APP-79290D01) under this house and device
+                try:
+                    created_app = db.create_appliance(house_id, dev_id, appliance_id, "generic", 100.0)
+                    house_app_map[appliance_id] = created_app
+                except Exception:
+                    house_app_map[appliance_id] = {
+                        "id": appliance_id,
+                        "house_id": house_id,
+                        "device_id": dev_id,
+                        "appliance_name": appliance_id,
+                        "appliance_type": "generic",
+                        "rated_power_w": 100.0,
+                        "ratedPowerW": 100.0,
+                    }
+
+            app_info = house_app_map[appliance_id]
+
+            # 3. Extract & Validate Reading Values
+            try:
+                voltage = float(data.get("voltage", 230.0))
+                current = float(data.get("current", 0.0))
+                power_w = float(data.get("power_w") if data.get("power_w") is not None else data.get("powerW", 0.0))
+                energy_kwh = float(data.get("energy_kwh") if data.get("energy_kwh") is not None else data.get("energyKwh", 0.0))
+                temperature = float(data.get("temperature", 25.0))
+                humidity = float(data.get("humidity", 50.0))
+                status_str = str(data.get("status", "ON")).upper()
+            except (ValueError, TypeError):
+                return jsonify({"ok": False, "error": "Malformed numeric telemetry values"}), 400
+
+            # 4. Anomaly Detection & ML Updates
+            atype = str(app_info.get("type") or app_info.get("appliance_type") or "generic").lower()
+            model_id = atype if atype in APPLIANCE_IDS else "laptop"
+            features = {
                 "power_w": power_w,
-                "voltage": voltage,
-                "current": current,
-                "energy_kwh": energy_kwh,
-                "temperature": temperature,
-                "humidity": humidity,
-                "anomaly_score": anomaly_score,
-            })
+                "status": 1 if status_str in ["ON", "1", "TRUE"] else 0,
+                "hour": datetime.now().hour,
+                "day_of_week": datetime.now().weekday(),
+                "is_weekend": 1 if datetime.now().weekday() >= 5 else 0,
+                "month": datetime.now().month,
+                "power_lag_1": power_w,
+                "power_lag_5": power_w,
+                "power_rolling_mean": power_w,
+                "power_rolling_max": power_w,
+            }
+            try:
+                anomaly_score = _anomaly_score(model_id, features)
+            except Exception:
+                anomaly_score = 0.05
 
-        return jsonify({
-            "ok": True,
-            "status": "accepted",
-            "device_id": dev_id,
-            "appliance_id": appliance_id,
-            "power_w": power_w,
-            "anomaly_score": anomaly_score,
-            "predicted_power_w": round(predicted_power, 1),
-            "target_power_w": target_w,
-            "action": mode,
-            "relay_command": relay_command,
-            "reward": reward,
-        }), 200
+            try:
+                predicted_power = _predict_power(model_id, features)
+            except Exception:
+                predicted_power = power_w
+
+            if predicted_power is None:
+                predicted_power = power_w
+
+            # RL Decision Core & Relay Command Calculation
+            rated_w = float(app_info.get("ratedPowerW") or app_info.get("rated_power_w") or 100.0)
+            mode = app_info.get("mode", "maintain")
+            target_w = rated_w
+            if mode in ["reduce", "eco"]:
+                target_w = round(rated_w * 0.75, 1)
+            elif mode == "increase":
+                target_w = round(rated_w * 1.2, 1)
+
+            power_error = round(power_w - target_w, 1)
+            norm_err = abs(power_error) / max(rated_w, 1.0)
+            reward = round(1.0 - norm_err * 1.6 - anomaly_score * 0.5, 2)
+            relay_command = "HIGH" if (status_str in ["ON", "1", "TRUE"] and power_w <= rated_w * 1.5) else "LOW"
+
+            # 5. Persist to Database
+            try:
+                db.save_telemetry(
+                    user_id=user_id,
+                    house_id=house_id,
+                    appliance_id=appliance_id,
+                    voltage=voltage,
+                    current=current,
+                    power_w=power_w,
+                    energy_kwh=energy_kwh,
+                    temperature=temperature,
+                    humidity=humidity,
+                    status=status_str,
+                    anomaly_score=anomaly_score,
+                )
+            except Exception as db_err:
+                print(f"[telemetry] Warning: DB save failed: {db_err}")
+
+            # 6. Update Real-Time Runtime State & Memory Buffers
+            now_ms = int(time.time() * 1000)
+            app_name = app_info.get("name") or app_info.get("appliance_name") or appliance_id
+            pred_val = round(predicted_power, 1) if predicted_power is not None else round(power_w, 1)
+
+            with _lock:
+                runtime_state = {
+                    "id": appliance_id,
+                    "name": app_name,
+                    "status": "on" if status_str in ["ON", "1", "TRUE"] else "off",
+                    "mode": mode,
+                    "powerW": power_w,
+                    "targetPowerW": target_w,
+                    "tempC": temperature,
+                    "humidityPct": humidity,
+                    "voltageV": voltage,
+                    "currentA": current,
+                    "energyKwh": energy_kwh,
+                    "anomalyScore": anomaly_score,
+                    "isAnomaly": anomaly_score > 0.65,
+                    "lastUpdate": now_ms,
+                    "predictedPowerW": pred_val,
+                    "relayCommand": relay_command,
+                    "reward": reward,
+                }
+                _current_state[appliance_id] = runtime_state
+
+                if appliance_id not in _telemetry_buffers:
+                    _telemetry_buffers[appliance_id] = collections.deque(maxlen=100)
+                _telemetry_buffers[appliance_id].append({
+                    "t": now_ms,
+                    "power_w": power_w,
+                    "voltage": voltage,
+                    "current": current,
+                    "energy_kwh": energy_kwh,
+                    "temperature": temperature,
+                    "humidity": humidity,
+                    "anomaly_score": anomaly_score,
+                })
+
+            return jsonify({
+                "ok": True,
+                "status": "accepted",
+                "device_id": dev_id,
+                "appliance_id": appliance_id,
+                "power_w": power_w,
+                "anomaly_score": anomaly_score,
+                "predicted_power_w": pred_val,
+                "target_power_w": target_w,
+                "action": mode,
+                "relay_command": relay_command,
+                "reward": reward,
+            }), 200
+        except Exception as err:
+            import traceback
+            traceback.print_exc()
+            print(f"[telemetry] Exception in POST: {err}")
+            return jsonify({"ok": False, "error": f"Telemetry processing exception: {str(err)}"}), 500
 
     else:
         # GET Telemetry dashboard polling logic
