@@ -58,25 +58,38 @@ function DevicesPage() {
                 <div>
                   <span className="text-xs text-muted-foreground uppercase">Signal Strength</span>
                   <p className="font-medium mt-0.5 flex items-center gap-1.5">
-                    <Wifi className="size-4 text-success" /> {rt.signalPct ?? 100}%
+                    <Wifi className="size-4 text-success" />
+                    {settings.useLiveApi ? (rt.isHardware && rt.signalPct !== undefined ? `${rt.signalPct}%` : "Not available") : `${rt.signalPct ?? 100}%`}
                   </p>
                 </div>
                 <div>
-                  <span className="text-xs text-muted-foreground uppercase">Battery Status</span>
+                  <span className="text-xs text-muted-foreground uppercase">Battery / Power</span>
                   <p className="font-medium mt-0.5">
-                    {rt.batteryPct !== undefined ? `${rt.batteryPct}%` : "Mains Power"}
+                    {rt.batteryPct !== undefined ? `${rt.batteryPct}%` : "Mains Power (PZEM)"}
                   </p>
                 </div>
                 <div>
                   <span className="text-xs text-muted-foreground uppercase">Last Telemetry</span>
                   <p className="font-medium mt-0.5 text-xs">
-                    {rt.lastSeen ? new Date(rt.lastSeen).toLocaleTimeString() : "N/A"}
+                    {rt.lastSeen ? new Date(rt.lastSeen).toLocaleTimeString() : "Not available"}
                   </p>
                 </div>
                 <div>
                   <span className="text-xs text-muted-foreground uppercase">Data Source</span>
                   <p className="font-medium mt-0.5 text-xs text-success">
-                    {settings.useLiveApi ? "Flask API (UK-DALE Replay)" : "Active (Simulator)"}
+                    {settings.useLiveApi ? (rt.isHardware ? "Physical ESP32 Node" : "Unmeasured") : "Active (Simulator)"}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-xs text-muted-foreground uppercase">Authentication</span>
+                  <p className="font-medium mt-0.5 text-xs text-emerald-600 dark:text-emerald-400">
+                    {settings.useLiveApi && rt.isHardware ? "Authenticated (Configured)" : "Standard"}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-xs text-muted-foreground uppercase">Electrical State</span>
+                  <p className="font-medium mt-0.5 text-xs">
+                    {rt.voltageV !== undefined ? `${rt.voltageV.toFixed(1)} V · ${rt.currentA !== undefined ? rt.currentA.toFixed(2) + " A" : ""}` : "Not available"}
                   </p>
                 </div>
               </div>

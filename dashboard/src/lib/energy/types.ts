@@ -164,4 +164,10 @@ export interface SystemSnapshot {
   costToday: number;
   comfort: "optimal" | "acceptable" | "attention";
   safety: "safe" | "guarded" | "blocked";
+  ambientTempC?: number;
+  ambientHumidityPct?: number;
+  voltageV?: number;
+  currentA?: number;
+  primaryApplianceId?: string;
+  isHardwareLive?: boolean;
 }

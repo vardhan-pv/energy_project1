@@ -243,24 +243,32 @@ async function pollLiveApi(
       const isHardware = rawRt.voltageV !== undefined || rawRt.voltage !== undefined || rawRt.humidityPct !== undefined || rawRt.humidity !== undefined;
       const prevHistory = prev?.runtimes?.[id]?.history ?? [];
       const powerW = isHardware ? (rt.powerW ?? 0) : 0;
+      const tempC = rawRt.temperatureC ?? rawRt.tempC ?? rawRt.temperature;
+      const humidityPct = rawRt.humidityPct ?? rawRt.humidity;
+      const voltageV = rawRt.voltageV ?? rawRt.voltage;
+      const currentA = rawRt.currentA ?? rawRt.current;
+      const energyTodayKwh = rawRt.energyTodayKwh ?? rawRt.energyKwh ?? 0;
+
       const sample = {
         t: now,
         powerW,
-        energyKwh: rt.energyTodayKwh ?? 0,
-        temperatureC: rt.temperatureC,
+        energyKwh: energyTodayKwh,
+        temperatureC: tempC,
         status: rt.status ?? "off",
       };
       const history = [...prevHistory, sample].slice(-HISTORY_POINTS);
       runtimes[id] = {
         ...rt,
         powerW,
+        energyTodayKwh,
+        temperatureC: tempC,
+        humidityPct,
+        voltageV,
+        currentA,
         isHardware,
-        voltageV: rt.voltageV ?? rawRt.voltage,
-        currentA: rt.currentA ?? rawRt.current,
-        humidityPct: rt.humidityPct ?? rawRt.humidity,
         online: isHardware ? (rt.online ?? true) : false,
         history,
-        lastSeen: now,
+        lastSeen: rawRt.lastUpdate ?? rt.lastSeen ?? now,
       };
     }
 
@@ -821,6 +829,8 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
     }
     const currentAppliances = state.appliances.length > 0 ? state.appliances : APPLIANCES;
     const activeHardwareRuntimes = Object.values(state.runtimes).filter((r) => r.isHardware);
+    const primaryHardware = activeHardwareRuntimes[0];
+
     const totalPowerW = settings.useLiveApi
       ? (activeHardwareRuntimes.length > 0
           ? activeHardwareRuntimes.reduce((s, r) => s + (r.powerW ?? 0), 0)
@@ -832,9 +842,20 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
           ? activeHardwareRuntimes.reduce((s, r) => s + (r.energyTodayKwh ?? 0), 0)
           : (state.runtimes["APP-1967426F"]?.energyTodayKwh ?? 0))
       : currentAppliances.reduce((s, p) => s + (state.runtimes[p.id]?.energyTodayKwh ?? 0), 0);
+
     const savingsKwh = energyTodayKwh * (settings.ecoTargetPct / 100) * (settings.autopilot ? 1 : 0.35);
     const risky = currentAppliances.some((p) => state.runtimes[p.id]?.risk === "risk");
     const watch = currentAppliances.some((p) => state.runtimes[p.id]?.risk === "watch");
+
+    let comfort: "optimal" | "acceptable" | "attention" = "optimal";
+    if (primaryHardware?.temperatureC !== undefined) {
+      if (primaryHardware.temperatureC > 32 || primaryHardware.temperatureC < 18) comfort = "attention";
+      else if (primaryHardware.temperatureC > 28) comfort = "acceptable";
+      else comfort = "optimal";
+    } else {
+      comfort = risky ? "attention" : watch ? "acceptable" : "optimal";
+    }
+
     return {
       t: state.now,
       totalPowerW: Math.round(totalPowerW * 10) / 10,
@@ -842,8 +863,14 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
       savingsKwh: Math.round(savingsKwh * 1000) / 1000,
       savingsPct: Math.round((settings.ecoTargetPct * (settings.autopilot ? 1 : 0.35)) * 10) / 10,
       costToday: energyTodayKwh * settings.tariffPerKwh,
-      comfort: risky ? "attention" : watch ? "acceptable" : "optimal",
+      comfort,
       safety: risky && settings.safetyInterlocks ? "blocked" : watch ? "guarded" : "safe",
+      ambientTempC: primaryHardware?.temperatureC,
+      ambientHumidityPct: primaryHardware?.humidityPct,
+      voltageV: primaryHardware?.voltageV,
+      currentA: primaryHardware?.currentA,
+      primaryApplianceId: primaryHardware?.id,
+      isHardwareLive: !!primaryHardware,
     };
   }, [state, settings]);
 

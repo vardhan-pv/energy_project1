@@ -146,10 +146,14 @@ function LivePage() {
                 <RiskBadge risk={rt.risk} />
               </div>
               <dl className="mb-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-                <Cell label="Power" value={fmtW(rt.powerW, 1)} />
+                <Cell label="Power" value={settings.useLiveApi && !rt.isHardware ? "0.0 W" : fmtW(rt.powerW, 1)} />
+                <Cell label="Voltage" value={rt.voltageV !== undefined ? `${rt.voltageV.toFixed(1)} V` : "Not available"} />
+                <Cell label="Current" value={rt.currentA !== undefined ? `${rt.currentA.toFixed(2)} A` : "Not available"} />
                 <Cell label="Energy today" value={fmtKwh(rt.energyTodayKwh)} />
-                <Cell label="Temperature" value={fmtTemp(rt.temperatureC)} />
-                <Cell label="Est. cost" value={`${settings.currency}${(rt.energyTodayKwh * settings.tariffPerKwh).toFixed(2)}`} />
+                <Cell label="Temperature" value={rt.temperatureC !== undefined ? fmtTemp(rt.temperatureC) : "Not available"} />
+                <Cell label="Humidity" value={rt.humidityPct !== undefined ? `${rt.humidityPct.toFixed(1)}%` : "Not available"} />
+                <Cell label="Node Type" value={rt.isHardware ? "Physical ESP32" : "Unmeasured"} />
+                <Cell label="Appliance ID" value={id} />
               </dl>
               <PowerAreaChart data={rt.history.slice(-points)} height={150} />
             </div>

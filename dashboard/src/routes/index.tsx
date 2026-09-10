@@ -137,8 +137,20 @@ function Overview() {
             label="Comfort"
             value={snapshot.comfort}
             tone={snapshot.comfort === "optimal" ? "success" : snapshot.comfort === "acceptable" ? "warning" : "danger"}
-            detail="Based on room temperature and fan behaviour."
+            detail={
+              snapshot.ambientTempC !== undefined
+                ? `Temp: ${snapshot.ambientTempC.toFixed(1)}°C${snapshot.ambientHumidityPct !== undefined ? ` · Humidity: ${snapshot.ambientHumidityPct.toFixed(1)}%` : ""}`
+                : "Not available (no ambient temp/humidity sensor data received)"
+            }
           />
+          {settings.useLiveApi && snapshot.isHardwareLive ? (
+            <StatusRow
+              label="Hardware Node"
+              value="Authenticated"
+              tone="success"
+              detail={`Device: ${snapshot.primaryApplianceId || "ESP32"} · Voltage: ${snapshot.voltageV ? snapshot.voltageV.toFixed(1) + " V" : "Not available"} · Current: ${snapshot.currentA !== undefined ? snapshot.currentA.toFixed(2) + " A" : "Not available"}`}
+            />
+          ) : null}
           <StatusRow
             label="Safety"
             value={snapshot.safety}
