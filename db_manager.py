@@ -144,11 +144,6 @@ def init_db():
     );
     """)
 
-    try:
-        cursor.execute("ALTER TABLE devices ADD COLUMN device_secret TEXT;")
-    except Exception:
-        pass
-
     # 4. Appliances table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS appliances (
