@@ -497,10 +497,20 @@ def _replay_loop():
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*", "allow_headers": "*", "methods": "*"}}, supports_credentials=True)
 
+@app.before_request
+def handle_preflight():
+    if request.method == "OPTIONS":
+        response = app.make_default_options_response()
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With, X-Device-Id, X-Device-Secret"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+        return response
+
+
 @app.after_request
 def add_cors_headers(response):
     response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With, X-Device-Id, X-Device-Secret"
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
     return response
 
@@ -661,8 +671,10 @@ def manage_devices():
         return jsonify(devs)
 
 
-@app.route("/api/devices/<device_id>/reset-secret", methods=["POST"])
+@app.route("/api/devices/<device_id>/reset-secret", methods=["POST", "OPTIONS"])
 def reset_device_secret_endpoint(device_id):
+    if request.method == "OPTIONS":
+        return jsonify({"ok": True}), 200
     user_id = get_auth_user_id()
     if not user_id:
         return jsonify({"ok": False, "error": "Unauthorized"}), 401
