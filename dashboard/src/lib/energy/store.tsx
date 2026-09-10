@@ -47,7 +47,7 @@ export const DEFAULT_SETTINGS: Settings = {
   budgetKwhPerDay: 3.2,
   notifications: true,
   reduceMotion: false,
-  apiBaseUrl: "https://energy-project1.onrender.com",
+  apiBaseUrl: "http://localhost:5000",
   useLiveApi: true,
 };
 
@@ -206,9 +206,6 @@ function loadSettings(): Settings {
     const raw = window.localStorage.getItem("ceos.settings");
     if (!raw) return DEFAULT_SETTINGS;
     const parsed = JSON.parse(raw) as Partial<Settings>;
-    if (parsed.apiBaseUrl === "http://localhost:5000" || parsed.apiBaseUrl === "http://localhost:5001") {
-      parsed.apiBaseUrl = "https://energy-project1.onrender.com";
-    }
     return { ...DEFAULT_SETTINGS, ...parsed };
   } catch {
     return DEFAULT_SETTINGS;
@@ -241,17 +238,30 @@ async function pollLiveApi(
 
     for (const rt of telemetry) {
       const id = rt.id;
-      // Merge history: keep previous history and append new sample
+      const rawRt = rt as any;
+      // Real ESP32 hardware telemetry contains voltage/voltageV, current/currentA, or humidity/humidityPct set by POST endpoint
+      const isHardware = rawRt.voltageV !== undefined || rawRt.voltage !== undefined || rawRt.humidityPct !== undefined || rawRt.humidity !== undefined;
       const prevHistory = prev?.runtimes?.[id]?.history ?? [];
+      const powerW = isHardware ? (rt.powerW ?? 0) : 0;
       const sample = {
         t: now,
-        powerW: rt.powerW ?? 0,
+        powerW,
         energyKwh: rt.energyTodayKwh ?? 0,
         temperatureC: rt.temperatureC,
         status: rt.status ?? "off",
       };
       const history = [...prevHistory, sample].slice(-HISTORY_POINTS);
-      runtimes[id] = { ...rt, history, lastSeen: now };
+      runtimes[id] = {
+        ...rt,
+        powerW,
+        isHardware,
+        voltageV: rt.voltageV ?? rawRt.voltage,
+        currentA: rt.currentA ?? rawRt.current,
+        humidityPct: rt.humidityPct ?? rawRt.humidity,
+        online: isHardware ? (rt.online ?? true) : false,
+        history,
+        lastSeen: now,
+      };
     }
 
     for (const cl of controlLoopData) {
@@ -355,75 +365,31 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const loginUser = async (identifier: string, pass: string) => {
-    let ds = createHttpDataSource(settings.apiBaseUrl);
-    try {
-      const res = await ds.login(identifier, pass);
-      if (res.ok && res.token) {
-        setToken(res.token);
-        setUser(res.user);
-        if (typeof window !== "undefined") {
-          window.localStorage.setItem("ceos.token", res.token);
-          window.localStorage.setItem("ceos.user", JSON.stringify(res.user));
-        }
-        return res.user;
+    const ds = createHttpDataSource(settings.apiBaseUrl);
+    const res = await ds.login(identifier, pass);
+    if (res.ok && res.token) {
+      setToken(res.token);
+      setUser(res.user);
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("ceos.token", res.token);
+        window.localStorage.setItem("ceos.user", JSON.stringify(res.user));
       }
-    } catch (err) {
-      if (settings.apiBaseUrl.includes("onrender.com")) {
-        try {
-          const altDs = createHttpDataSource("http://localhost:5000");
-          const res = await altDs.login(identifier, pass);
-          if (res.ok && res.token) {
-            updateSettings({ apiBaseUrl: "http://localhost:5000" });
-            setToken(res.token);
-            setUser(res.user);
-            if (typeof window !== "undefined") {
-              window.localStorage.setItem("ceos.token", res.token);
-              window.localStorage.setItem("ceos.user", JSON.stringify(res.user));
-            }
-            return res.user;
-          }
-        } catch {
-          // ignore
-        }
-      }
-      throw err;
+      return res.user;
     }
     throw new Error("Login failed");
   };
 
   const registerUser = async (name: string, email: string, pass: string) => {
-    let ds = createHttpDataSource(settings.apiBaseUrl);
-    try {
-      const res = await ds.register(name, email, pass);
-      if (res.ok && res.token) {
-        setToken(res.token);
-        setUser(res.user);
-        if (typeof window !== "undefined") {
-          window.localStorage.setItem("ceos.token", res.token);
-          window.localStorage.setItem("ceos.user", JSON.stringify(res.user));
-        }
-        return res.user;
+    const ds = createHttpDataSource(settings.apiBaseUrl);
+    const res = await ds.register(name, email, pass);
+    if (res.ok && res.token) {
+      setToken(res.token);
+      setUser(res.user);
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("ceos.token", res.token);
+        window.localStorage.setItem("ceos.user", JSON.stringify(res.user));
       }
-    } catch (err) {
-      if (settings.apiBaseUrl.includes("onrender.com")) {
-        try {
-          const altDs = createHttpDataSource("http://localhost:5000");
-          const res = await altDs.register(name, email, pass);
-          if (res.ok && res.token) {
-            updateSettings({ apiBaseUrl: "http://localhost:5000" });
-            setToken(res.token);
-            setUser(res.user);
-            if (typeof window !== "undefined") {
-              window.localStorage.setItem("ceos.token", res.token);
-              window.localStorage.setItem("ceos.user", JSON.stringify(res.user));
-            }
-            return res.user;
-          }
-        } catch {
-          // ignore
-        }
-      }
-      throw err;
+      return res.user;
     }
     throw new Error("Registration failed");
   };
@@ -475,21 +441,8 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
 
     const poll = async () => {
       if (cancelled) return;
-      let currentDs = ds;
-      let result = await pollLiveApi(currentDs, horizonMinutes, state, settingsRef.current);
-      
-      // Auto fallback between port 5000 and 5001 if primary URL is localhost and failed
-      if (!result && settingsRef.current.apiBaseUrl.includes("localhost")) {
-        const altUrl = settingsRef.current.apiBaseUrl.includes("5000")
-          ? "http://localhost:5001"
-          : "http://localhost:5000";
-        const altDs = createHttpDataSource(altUrl);
-        const altResult = await pollLiveApi(altDs, horizonMinutes, state, settingsRef.current);
-        if (altResult) {
-          result = altResult;
-          updateSettings({ apiBaseUrl: altUrl });
-        }
-      }
+      const currentDs = createHttpDataSource(settingsRef.current.apiBaseUrl, () => token);
+      const result = await pollLiveApi(currentDs, horizonMinutes, state, settingsRef.current);
 
       if (cancelled) return;
       if (result) {
@@ -867,8 +820,18 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
       };
     }
     const currentAppliances = state.appliances.length > 0 ? state.appliances : APPLIANCES;
-    const totalPowerW = currentAppliances.reduce((s, p) => s + (state.runtimes[p.id]?.powerW ?? 0), 0);
-    const energyTodayKwh = currentAppliances.reduce((s, p) => s + (state.runtimes[p.id]?.energyTodayKwh ?? 0), 0);
+    const activeHardwareRuntimes = Object.values(state.runtimes).filter((r) => r.isHardware);
+    const totalPowerW = settings.useLiveApi
+      ? (activeHardwareRuntimes.length > 0
+          ? activeHardwareRuntimes.reduce((s, r) => s + (r.powerW ?? 0), 0)
+          : (state.runtimes["APP-1967426F"]?.powerW ?? state.runtimes["laptop"]?.powerW ?? 0))
+      : currentAppliances.reduce((s, p) => s + (state.runtimes[p.id]?.powerW ?? 0), 0);
+
+    const energyTodayKwh = settings.useLiveApi
+      ? (activeHardwareRuntimes.length > 0
+          ? activeHardwareRuntimes.reduce((s, r) => s + (r.energyTodayKwh ?? 0), 0)
+          : (state.runtimes["APP-1967426F"]?.energyTodayKwh ?? 0))
+      : currentAppliances.reduce((s, p) => s + (state.runtimes[p.id]?.energyTodayKwh ?? 0), 0);
     const savingsKwh = energyTodayKwh * (settings.ecoTargetPct / 100) * (settings.autopilot ? 1 : 0.35);
     const risky = currentAppliances.some((p) => state.runtimes[p.id]?.risk === "risk");
     const watch = currentAppliances.some((p) => state.runtimes[p.id]?.risk === "watch");

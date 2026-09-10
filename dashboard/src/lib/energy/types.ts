@@ -83,6 +83,10 @@ export interface ApplianceRuntime {
   signalPct: number;
   batteryPct?: number;
   lastSeen: number;
+  isHardware?: boolean;
+  voltageV?: number;
+  currentA?: number;
+  humidityPct?: number;
   history: TelemetrySample[];
 }
 

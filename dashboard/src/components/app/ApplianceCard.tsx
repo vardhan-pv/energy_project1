@@ -31,22 +31,50 @@ export function ApplianceCard({ id, compact = false }: { id: ApplianceId; compac
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <RiskBadge risk={rt.risk} />
-          <Badge variant="outline" className="gap-1.5 capitalize">
-            <StatusDot state={rt.online ? rt.status : "offline"} />
-            {rt.status}
-          </Badge>
+          {settings.useLiveApi ? (
+            rt.isHardware ? (
+              <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 gap-1.5">
+                <StatusDot state="on" />
+                LIVE ESP32
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="gap-1.5 text-muted-foreground">
+                <StatusDot state="offline" />
+                Unmeasured
+              </Badge>
+            )
+          ) : (
+            <>
+              <RiskBadge risk={rt.risk} />
+              <Badge variant="outline" className="gap-1.5 capitalize">
+                <StatusDot state={rt.online ? rt.status : "offline"} />
+                {rt.status}
+              </Badge>
+            </>
+          )}
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Metric label="Power now" value={fmtW(rt.powerW, 1)} />
-        <Metric label="Today" value={fmtKwh(rt.energyTodayKwh)} />
-        <Metric label="Cost today" value={fmtMoney(cost, settings.currency)} />
+        <Metric label="Power now" value={settings.useLiveApi && !rt.isHardware ? "0.0 W" : fmtW(rt.powerW, 1)} />
         <Metric
-          label={profile.hasTemperature ? "Temperature" : "Mode"}
-          value={profile.hasTemperature ? fmtTemp(rt.temperatureC) : rt.mode}
-          capitalize={!profile.hasTemperature}
+          label={rt.voltageV ? "Voltage" : "Today"}
+          value={rt.voltageV ? `${rt.voltageV.toFixed(1)} V` : fmtKwh(rt.energyTodayKwh)}
+        />
+        <Metric
+          label={rt.currentA !== undefined ? "Current" : "Cost today"}
+          value={rt.currentA !== undefined ? `${rt.currentA.toFixed(2)} A` : fmtMoney(cost, settings.currency)}
+        />
+        <Metric
+          label={rt.humidityPct ? "Humidity" : profile.hasTemperature ? "Temperature" : "Mode"}
+          value={
+            rt.humidityPct
+              ? `${rt.humidityPct.toFixed(0)}%`
+              : profile.hasTemperature
+              ? fmtTemp(rt.temperatureC)
+              : rt.mode
+          }
+          capitalize={!profile.hasTemperature && !rt.humidityPct}
         />
       </div>
 
