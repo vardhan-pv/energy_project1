@@ -47,7 +47,7 @@ export const DEFAULT_SETTINGS: Settings = {
   budgetKwhPerDay: 3.2,
   notifications: true,
   reduceMotion: false,
-  apiBaseUrl: "http://localhost:5000",
+  apiBaseUrl: "https://energy-project1.onrender.com",
   useLiveApi: true,
 };
 
@@ -206,7 +206,15 @@ function loadSettings(): Settings {
     const raw = window.localStorage.getItem("ceos.settings");
     if (!raw) return DEFAULT_SETTINGS;
     const parsed = JSON.parse(raw) as Partial<Settings>;
-    return { ...DEFAULT_SETTINGS, ...parsed };
+    const loaded = { ...DEFAULT_SETTINGS, ...parsed };
+
+    // Auto-heal apiBaseUrl if running on production host (Vercel) but stored settings point to localhost
+    const isNonLocal = typeof window !== "undefined" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1";
+    if (isNonLocal && (loaded.apiBaseUrl.includes("localhost") || loaded.apiBaseUrl.includes("127.0.0.1"))) {
+      loaded.apiBaseUrl = "https://energy-project1.onrender.com";
+      window.localStorage.setItem("ceos.settings", JSON.stringify(loaded));
+    }
+    return loaded;
   } catch {
     return DEFAULT_SETTINGS;
   }
