@@ -74,6 +74,7 @@ function Overview() {
   const budgetPct = (snapshot.energyTodayKwh / settings.budgetKwhPerDay) * 100;
   const activeHardwareRt = Object.values(runtimes).find((r) => r.isHardware) || runtimes[appliances[0]?.id];
   const activeLoop = firstAppId ? loops[firstAppId] : undefined;
+  const relayCommandConfirmed = activeHardwareRt?.status !== undefined;
 
   return (
     <>
