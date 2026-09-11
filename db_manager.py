@@ -426,6 +426,29 @@ def get_user_houses(user_id: str) -> list[dict]:
     ]
 
 
+def get_all_houses():
+    """Retrieve all digital houses in the database."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM houses;")
+    rows = cursor.fetchall()
+    conn.close()
+
+    houses = []
+    for r in rows:
+        houses.append({
+            "id": r["house_id"],
+            "house_id": r["house_id"],
+            "user_id": r["user_id"],
+            "name": r.get("house_name"),
+            "house_name": r.get("house_name"),
+            "location": r.get("location"),
+            "status": r.get("status"),
+            "created_at": r.get("created_at")
+        })
+    return houses
+
+
 def update_house(house_id: str, house_name: str = None, location: str = None) -> dict:
     conn = get_db()
     cursor = conn.cursor()
