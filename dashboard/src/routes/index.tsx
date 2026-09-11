@@ -120,27 +120,27 @@ function Overview() {
         </div>
       </section>
 
-      {/* 2. LIVE PHYSICAL ESP32 HARDWARE TELEMETRY PANEL (TOP PRIORITY) */}
+      {/* 2. LIVE PHYSICAL ESP32 HARDWARE TELEMETRY PANEL (EXACT DATA STREAM) */}
       <section aria-label="Live Telemetry Panel">
         <LiveTelemetryPanel
-          voltageV={snapshot.voltageV ?? 230.4}
-          currentA={snapshot.currentA ?? 0.45}
-          powerW={snapshot.totalPowerW ?? 103.5}
-          energyKwh={snapshot.energyTodayKwh ?? 1.42}
-          temperatureC={snapshot.ambientTempC ?? 28.5}
-          humidityPct={snapshot.ambientHumidityPct ?? 58.0}
-          frequencyHz={50.0}
-          powerFactor={0.98}
-          isHardwareLive={snapshot.isHardwareLive ?? true}
+          voltageV={snapshot.voltageV}
+          currentA={snapshot.currentA}
+          powerW={snapshot.totalPowerW}
+          energyKwh={snapshot.energyTodayKwh}
+          temperatureC={snapshot.ambientTempC}
+          humidityPct={snapshot.ambientHumidityPct}
+          frequencyHz={undefined}
+          powerFactor={undefined}
+          isHardwareLive={snapshot.isHardwareLive}
           deviceId="DEV-638C71FE"
           applianceId={activeHardwareRt?.id ? activeHardwareRt.id.toUpperCase() : "APP-79290D01"}
-          anomalyScore={activeHardwareRt?.anomalyScore ?? 0.02}
-          mode={activeHardwareRt?.mode ? activeHardwareRt.mode.toUpperCase() : "OPTIMIZE"}
-          action={activeLoop?.action || "OPTIMIZE_LOAD"}
+          anomalyScore={activeHardwareRt?.anomalyScore}
+          mode={activeHardwareRt?.mode ? activeHardwareRt.mode.toUpperCase() : "MAINTAIN"}
+          action={activeLoop?.action || "MAINTAIN_LOAD"}
           relayCommand={activeHardwareRt?.status === "off" ? "RELAY_CH2_OFF (Open)" : "RELAY_CH2_ON (Closed)"}
-          predictedPowerW={activeHardwareRt?.targetPowerW || 95.0}
-          targetPowerW={activeHardwareRt?.targetPowerW || 100.0}
-          reward={activeLoop?.reward || 1.45}
+          predictedPowerW={activeHardwareRt?.targetPowerW}
+          targetPowerW={activeHardwareRt?.targetPowerW}
+          reward={activeLoop?.reward}
         />
       </section>
 
