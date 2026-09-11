@@ -848,31 +848,53 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
     }
     const currentAppliances = state.appliances.length > 0 ? state.appliances : APPLIANCES;
     const activeHardwareRuntimes = Object.values(state.runtimes).filter(
-      (r) => r.isHardware || (r as any).voltageV !== undefined || (r as any).tempC !== undefined || r.temperatureC !== undefined
+      (r) =>
+        r.isHardware ||
+        (r as any).voltageV !== undefined ||
+        (r as any).voltage !== undefined ||
+        (r as any).currentA !== undefined ||
+        (r as any).current !== undefined ||
+        (r as any).tempC !== undefined ||
+        (r as any).temperatureC !== undefined ||
+        (r as any).temperature !== undefined ||
+        (r as any).humidityPct !== undefined ||
+        (r as any).humidity !== undefined
     );
-    const primaryHardware = activeHardwareRuntimes[0] || Object.values(state.runtimes).find((r) => r.temperatureC !== undefined || (r as any).tempC !== undefined);
+    const primaryHardware =
+      activeHardwareRuntimes[0] ||
+      Object.values(state.runtimes).find(
+        (r) =>
+          (r as any).voltageV !== undefined ||
+          (r as any).voltage !== undefined ||
+          (r as any).temperatureC !== undefined ||
+          (r as any).tempC !== undefined ||
+          (r as any).temperature !== undefined
+      ) ||
+      Object.values(state.runtimes)[0];
 
     const totalPowerW = settings.useLiveApi
       ? (activeHardwareRuntimes.length > 0
-          ? activeHardwareRuntimes.reduce((s, r) => s + (r.powerW ?? 0), 0)
-          : (state.runtimes["APP-1967426F"]?.powerW ?? state.runtimes["laptop"]?.powerW ?? 0))
+          ? activeHardwareRuntimes.reduce((s, r) => s + (r.powerW ?? (r as any).power_w ?? 0), 0)
+          : (state.runtimes["APP-1967426F"]?.powerW ?? state.runtimes["laptop"]?.powerW ?? Object.values(state.runtimes)[0]?.powerW ?? 0))
       : currentAppliances.reduce((s, p) => s + (state.runtimes[p.id]?.powerW ?? 0), 0);
 
     const energyTodayKwh = settings.useLiveApi
       ? (activeHardwareRuntimes.length > 0
-          ? activeHardwareRuntimes.reduce((s, r) => s + (r.energyTodayKwh ?? 0), 0)
-          : (state.runtimes["APP-1967426F"]?.energyTodayKwh ?? 0))
+          ? activeHardwareRuntimes.reduce((s, r) => s + (r.energyTodayKwh ?? (r as any).energyKwh ?? (r as any).energy_kwh ?? 0), 0)
+          : (state.runtimes["APP-1967426F"]?.energyTodayKwh ?? Object.values(state.runtimes)[0]?.energyTodayKwh ?? 0))
       : currentAppliances.reduce((s, p) => s + (state.runtimes[p.id]?.energyTodayKwh ?? 0), 0);
 
     const savingsKwh = energyTodayKwh * (settings.ecoTargetPct / 100) * (settings.autopilot ? 1 : 0.35);
     const risky = currentAppliances.some((p) => state.runtimes[p.id]?.risk === "risk");
     const watch = currentAppliances.some((p) => state.runtimes[p.id]?.risk === "watch");
 
-    const tempVal = primaryHardware?.temperatureC ?? (primaryHardware as any)?.tempC;
+    const tempVal = primaryHardware?.temperatureC ?? (primaryHardware as any)?.tempC ?? (primaryHardware as any)?.temperature;
     const humidityVal = primaryHardware?.humidityPct ?? (primaryHardware as any)?.humidity;
+    const voltageVal = primaryHardware?.voltageV ?? (primaryHardware as any)?.voltage;
+    const currentVal = primaryHardware?.currentA ?? (primaryHardware as any)?.current;
 
     let comfort: "optimal" | "acceptable" | "attention" = "optimal";
-    if (tempVal !== undefined) {
+    if (tempVal !== undefined && tempVal !== null) {
       if (tempVal > 32 || tempVal < 18) comfort = "attention";
       else if (tempVal > 28) comfort = "acceptable";
       else comfort = "optimal";
@@ -889,10 +911,10 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
       costToday: energyTodayKwh * settings.tariffPerKwh,
       comfort,
       safety: risky && settings.safetyInterlocks ? "blocked" : watch ? "guarded" : "safe",
-      ambientTempC: tempVal,
-      ambientHumidityPct: humidityVal,
-      voltageV: primaryHardware?.voltageV ?? (primaryHardware as any)?.voltage,
-      currentA: primaryHardware?.currentA ?? (primaryHardware as any)?.current,
+      ambientTempC: tempVal !== undefined && tempVal !== null ? Number(tempVal) : undefined,
+      ambientHumidityPct: humidityVal !== undefined && humidityVal !== null ? Number(humidityVal) : undefined,
+      voltageV: voltageVal !== undefined && voltageVal !== null ? Number(voltageVal) : undefined,
+      currentA: currentVal !== undefined && currentVal !== null ? Number(currentVal) : undefined,
       primaryApplianceId: primaryHardware?.id,
       isHardwareLive: !!primaryHardware,
     };
