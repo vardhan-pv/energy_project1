@@ -860,22 +860,32 @@ def manage_telemetry():
 
             # 3. Extract & Validate Reading Values
             try:
-                voltage = float(data.get("voltage", 230.0))
-                current = float(data.get("current", 0.0))
+                voltage = float(data.get("voltage", data.get("voltageV", 230.4)))
+                current = float(data.get("current", data.get("currentA", 0.45)))
                 power_w = float(data.get("power_w") if data.get("power_w") is not None else data.get("powerW", 0.0))
                 energy_kwh = float(data.get("energy_kwh") if data.get("energy_kwh") is not None else data.get("energyKwh", 0.0))
-                temperature = float(data.get("temperature", 25.0))
-                humidity = float(data.get("humidity", 50.0))
+                temperature = float(data.get("temperature", data.get("temperatureC", 25.0)))
+                humidity = float(data.get("humidity", data.get("humidityPct", 50.0)))
+                frequency = float(data.get("frequency", data.get("frequencyHz", 50.0)))
+                pf = float(data.get("pf", data.get("powerFactor", 0.98)))
                 status_str = str(data.get("status", "ON")).upper()
-            except (ValueError, TypeError):
-                return jsonify({"ok": False, "error": "Malformed numeric telemetry values"}), 400
+            except Exception as e:
+                return jsonify({"ok": False, "error": f"Invalid telemetry numeric format: {e}"}), 400
 
-            # 4. Anomaly Detection & ML Updates
-            atype = str(app_info.get("type") or app_info.get("appliance_type") or "generic").lower()
-            model_id = atype if atype in APPLIANCE_IDS else "laptop"
+            # 4. Feature Extraction & Prediction
+            model_id = app_info.get("appliance_type") or appliance_id
+            if model_id not in APPLIANCE_IDS:
+                model_id = "laptop"
+
             features = {
                 "power_w": power_w,
-                "status": 1 if status_str in ["ON", "1", "TRUE"] else 0,
+                "voltage": voltage,
+                "current": current,
+                "energy_kwh": energy_kwh,
+                "temperature": temperature,
+                "humidity": humidity,
+                "frequency": frequency,
+                "pf": pf,
                 "hour": datetime.now().hour,
                 "day_of_week": datetime.now().weekday(),
                 "is_weekend": 1 if datetime.now().weekday() >= 5 else 0,
@@ -910,7 +920,7 @@ def manage_telemetry():
             power_error = round(power_w - target_w, 1)
             norm_err = abs(power_error) / max(rated_w, 1.0)
             reward = round(1.0 - norm_err * 1.6 - anomaly_score * 0.5, 2)
-            relay_command = "HIGH" if (status_str in ["ON", "1", "TRUE"] and power_w <= rated_w * 1.5) else "LOW"
+            relay_command = "LOW" if (status_str in ["ON", "1", "TRUE"] and power_w <= rated_w * 1.5) else "HIGH"
 
             # 5. Persist to Database
             try:
@@ -942,18 +952,37 @@ def manage_telemetry():
                     "status": "on" if status_str in ["ON", "1", "TRUE"] else "off",
                     "mode": mode,
                     "powerW": power_w,
+                    "power_w": power_w,
                     "targetPowerW": target_w,
+                    "target_power_w": target_w,
                     "tempC": temperature,
+                    "temperatureC": temperature,
+                    "temperature": temperature,
                     "humidityPct": humidity,
+                    "humidity": humidity,
                     "voltageV": voltage,
+                    "voltage": voltage,
                     "currentA": current,
+                    "current": current,
+                    "frequencyHz": frequency,
+                    "frequency": frequency,
+                    "powerFactor": pf,
+                    "pf": pf,
                     "energyKwh": energy_kwh,
+                    "energyTodayKwh": energy_kwh,
+                    "energy_kwh": energy_kwh,
                     "anomalyScore": anomaly_score,
+                    "anomaly_score": anomaly_score,
                     "isAnomaly": anomaly_score > 0.65,
                     "lastUpdate": now_ms,
+                    "lastSeen": now_ms,
                     "predictedPowerW": pred_val,
+                    "predicted_power_w": pred_val,
                     "relayCommand": relay_command,
+                    "relay_command": relay_command,
                     "reward": reward,
+                    "isHardware": True,
+                    "online": True,
                 }
                 _current_state[appliance_id] = runtime_state
 

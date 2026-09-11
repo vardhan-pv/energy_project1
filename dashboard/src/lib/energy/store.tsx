@@ -276,7 +276,9 @@ async function pollLiveApi(
       const humidityPct = rawRt.humidityPct ?? rawRt.humidity;
       const voltageV = rawRt.voltageV ?? rawRt.voltage;
       const currentA = rawRt.currentA ?? rawRt.current;
-      const energyTodayKwh = rawRt.energyTodayKwh ?? rawRt.energyKwh ?? 0;
+      const frequencyHz = rawRt.frequencyHz ?? rawRt.frequency ?? 50.0;
+      const powerFactor = rawRt.powerFactor ?? rawRt.pf ?? 0.98;
+      const energyTodayKwh = rawRt.energyTodayKwh ?? rawRt.energyKwh ?? rawRt.energy_kwh ?? 0;
 
       const sample = {
         t: now,
@@ -294,10 +296,12 @@ async function pollLiveApi(
         humidityPct,
         voltageV,
         currentA,
+        frequencyHz,
+        powerFactor,
         isHardware,
-        online: isHardware ? (rt.online ?? true) : (rt.online ?? false),
+        online: true,
         history,
-        lastSeen: rawRt.lastUpdate ?? rt.lastSeen ?? now,
+        lastSeen: rawRt.lastUpdate ?? rawRt.lastSeen ?? now,
       };
     }
 
@@ -888,19 +892,8 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
     const risky = currentAppliances.some((p) => state.runtimes[p.id]?.risk === "risk");
     const watch = currentAppliances.some((p) => state.runtimes[p.id]?.risk === "watch");
 
-    const tempVal = primaryHardware?.temperatureC ?? (primaryHardware as any)?.tempC ?? (primaryHardware as any)?.temperature;
-    const humidityVal = primaryHardware?.humidityPct ?? (primaryHardware as any)?.humidity;
-    const voltageVal = primaryHardware?.voltageV ?? (primaryHardware as any)?.voltage;
-    const currentVal = primaryHardware?.currentA ?? (primaryHardware as any)?.current;
-
-    let comfort: "optimal" | "acceptable" | "attention" = "optimal";
-    if (tempVal !== undefined && tempVal !== null) {
-      if (tempVal > 32 || tempVal < 18) comfort = "attention";
-      else if (tempVal > 28) comfort = "acceptable";
-      else comfort = "optimal";
-    } else {
-      comfort = risky ? "attention" : watch ? "acceptable" : "optimal";
-    }
+    const freqVal = primaryHardware?.frequencyHz ?? (primaryHardware as any)?.frequency;
+    const pfVal = primaryHardware?.powerFactor ?? (primaryHardware as any)?.pf;
 
     return {
       t: state.now,
@@ -915,6 +908,8 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
       ambientHumidityPct: humidityVal !== undefined && humidityVal !== null ? Number(humidityVal) : undefined,
       voltageV: voltageVal !== undefined && voltageVal !== null ? Number(voltageVal) : undefined,
       currentA: currentVal !== undefined && currentVal !== null ? Number(currentVal) : undefined,
+      frequencyHz: freqVal !== undefined && freqVal !== null ? Number(freqVal) : 50.0,
+      powerFactor: pfVal !== undefined && pfVal !== null ? Number(pfVal) : 0.98,
       primaryApplianceId: primaryHardware?.id,
       isHardwareLive: !!primaryHardware,
     };

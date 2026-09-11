@@ -87,6 +87,8 @@ export interface ApplianceRuntime {
   voltageV?: number;
   currentA?: number;
   humidityPct?: number;
+  frequencyHz?: number;
+  powerFactor?: number;
   history: TelemetrySample[];
 }
 
@@ -168,6 +170,8 @@ export interface SystemSnapshot {
   ambientHumidityPct?: number;
   voltageV?: number;
   currentA?: number;
+  frequencyHz?: number;
+  powerFactor?: number;
   primaryApplianceId?: string;
   isHardwareLive?: boolean;
 }
