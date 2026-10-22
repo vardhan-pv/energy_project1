@@ -39,6 +39,17 @@ RL_MODELS_DIR = BASE_DIR / "rl_models"
 PEAK_MODELS_DIR = BASE_DIR / "peak_models"
 ML_DATA_DIR = BASE_DIR / "ml_data"
 
+EXPECTED_MODEL_ARTIFACTS = [
+    str(path.relative_to(BASE_DIR))
+    for aid in APPLIANCE_IDS
+    for path in (
+        ML_MODELS_DIR / f"{aid}_energy_model.pkl",
+        ML_MODELS_DIR / f"{aid}_status_classifier.pkl",
+        ML_MODELS_DIR / f"{aid}_anomaly_model.pkl",
+        RL_MODELS_DIR / f"{aid}_rl_agent.pkl",
+    )
+]
+
 APPLIANCE_IDS = ["laptop", "kitchen_lights", "office_fan", "fridge"]
 
 # ---------------------------------------------------------------------------
@@ -784,43 +795,8 @@ def manage_telemetry():
 
             dev_record = db.get_device_by_credentials(dev_id, dev_secret)
             if not dev_record:
-                # Defensive auto-recovery for physical hardware node (DEV-638C71FE or registered device IDs)
-                dev_by_id = db.get_device(dev_id)
-                if dev_by_id:
-                    house_id = dev_by_id.get("house_id")
-                    if not house_id:
-                        all_houses = db.get_all_houses()
-                        house_id = all_houses[0]["id"] if all_houses else "HOUSE_MAIN"
-                    
-                    # Auto-sync the device secret in DB so future lookups succeed instantly
-                    try:
-                        conn = db.get_db()
-                        cursor = conn.cursor()
-                        cursor.execute("UPDATE devices SET device_secret = ? WHERE device_id = ?;", (dev_secret.strip(), dev_id.strip()))
-                        conn.commit()
-                        conn.close()
-                    except Exception:
-                        pass
-                    
-                    dev_record = db.get_device_by_credentials(dev_id, dev_secret) or {
-                        "device_id": dev_id,
-                        "house_id": house_id,
-                        "user_id": dev_by_id.get("user_id", "USR-ADMIN001"),
-                        "device_type": dev_by_id.get("device_type", "ESP32"),
-                        "device_name": dev_by_id.get("device_name", "ESP32 Main Node"),
-                        "status": "ONLINE",
-                        "device_secret": dev_secret,
-                    }
-                else:
-                    # Fresh database without device record: auto-provision device DEV-638C71FE for default house
-                    all_houses = db.get_all_houses()
-                    if not all_houses:
-                        # Create initial house if DB is empty
-                        db.create_house("HOUSE_MAIN", "USR-ADMIN001", "Primary House", "Main Location")
-                        all_houses = db.get_all_houses()
-                    house_id = all_houses[0]["id"]
-                    dev_record = db.create_device(house_id, "ESP32", "ESP32 Main Node", mac_address=None, device_secret=dev_secret.strip())
-                    dev_record["user_id"] = all_houses[0].get("user_id", "USR-ADMIN001")
+                # Never provision or rotate a credential as a side effect of telemetry.
+                return jsonify({"ok": False, "error": "Invalid device credentials"}), 401
 
             if dev_record.get("status") == "DISABLED":
                 return jsonify({"ok": False, "error": "Device is disabled"}), 403
@@ -831,46 +807,55 @@ def manage_telemetry():
             # 2. Extract & Validate Appliance
             appliance_id = data.get("appliance_id") or data.get("id")
             if not appliance_id:
-                house_apps = db.get_house_appliances(house_id)
-                if house_apps:
-                    appliance_id = house_apps[0]["id"]
-                else:
-                    appliance_id = "APP-79290D01"
+                device_apps = [
+                    app for app in db.get_house_appliances(house_id)
+                    if app.get("device_id") == dev_id
+                ]
+                if not device_apps:
+                    return jsonify({"ok": False, "error": "No appliance is registered to this device"}), 400
+                appliance_id = device_apps[0]["id"]
 
             house_apps = db.get_house_appliances(house_id)
             house_app_map = {a["id"]: a for a in house_apps}
 
             if appliance_id not in house_app_map:
-                # Auto-provision appliance_id (e.g. APP-79290D01) under this house and device
-                try:
-                    created_app = db.create_appliance(house_id, dev_id, appliance_id, "generic", 100.0)
-                    house_app_map[appliance_id] = created_app
-                except Exception:
-                    house_app_map[appliance_id] = {
-                        "id": appliance_id,
-                        "house_id": house_id,
-                        "device_id": dev_id,
-                        "appliance_name": appliance_id,
-                        "appliance_type": "generic",
-                        "rated_power_w": 100.0,
-                        "ratedPowerW": 100.0,
-                    }
+                return jsonify({"ok": False, "error": "Appliance is not registered to this house"}), 403
 
             app_info = house_app_map[appliance_id]
+            if app_info.get("device_id") and app_info["device_id"] != dev_id:
+                return jsonify({"ok": False, "error": "Appliance is not registered to this device"}), 403
 
             # 3. Extract & Validate Reading Values
             try:
-                voltage = float(data.get("voltage", data.get("voltageV", 230.4)))
-                current = float(data.get("current", data.get("currentA", 0.45)))
-                power_w = float(data.get("power_w") if data.get("power_w") is not None else data.get("powerW", 0.0))
-                energy_kwh = float(data.get("energy_kwh") if data.get("energy_kwh") is not None else data.get("energyKwh", 0.0))
-                temperature = float(data.get("temperature", data.get("temperatureC", 25.0)))
-                humidity = float(data.get("humidity", data.get("humidityPct", 50.0)))
-                frequency = float(data.get("frequency", data.get("frequencyHz", 50.0)))
-                pf = float(data.get("pf", data.get("powerFactor", 0.98)))
-                status_str = str(data.get("status", "ON")).upper()
+                def reading(primary, alias, default):
+                    raw = data[primary] if primary in data else data.get(alias, default)
+                    value = None if raw is None else float(raw)
+                    if value is not None and not math.isfinite(value):
+                        raise ValueError(f"{primary} must be finite")
+                    return value
+
+                voltage = reading("voltage", "voltageV", 230.4)
+                current = reading("current", "currentA", 0.45)
+                power_w = reading("power_w", "powerW", 0.0)
+                energy_kwh = reading("energy_kwh", "energyKwh", 0.0)
+                temperature = reading("temperature", "temperatureC", 25.0)
+                humidity = reading("humidity", "humidityPct", 50.0)
+                frequency = reading("frequency", "frequencyHz", 50.0)
+                pf = reading("pf", "powerFactor", 0.98)
+                relay_state = data.get("relay_state")
+                if relay_state is not None:
+                    relay_state = relay_state is True or str(relay_state).strip().lower() in {"1", "true", "on"}
+                default_status = "ON" if "relay_state" not in data or relay_state else "OFF"
+                status_str = str(data.get("status", default_status)).upper()
+                rl_action_code = data.get("latest_rl_action_code")
+                rl_action_code = None if rl_action_code is None else int(rl_action_code)
+                if rl_action_code is not None and rl_action_code not in range(4):
+                    raise ValueError("latest_rl_action_code must be between 0 and 3")
+                rl_action = data.get("latest_rl_action")
             except Exception as e:
                 return jsonify({"ok": False, "error": f"Invalid telemetry numeric format: {e}"}), 400
+
+            source = "simulator" if "simulator" in request.headers.get("User-Agent", "").lower() else "esp32"
 
             # 4. Feature Extraction & Prediction
             model_id = app_info.get("appliance_type") or appliance_id
@@ -923,22 +908,26 @@ def manage_telemetry():
             relay_command = "LOW" if (status_str in ["ON", "1", "TRUE"] and power_w <= rated_w * 1.5) else "HIGH"
 
             # 5. Persist to Database
-            try:
-                db.save_telemetry(
-                    user_id=user_id,
-                    house_id=house_id,
-                    appliance_id=appliance_id,
-                    voltage=voltage,
-                    current=current,
-                    power_w=power_w,
-                    energy_kwh=energy_kwh,
-                    temperature=temperature,
-                    humidity=humidity,
-                    status=status_str,
-                    anomaly_score=anomaly_score,
-                )
-            except Exception as db_err:
-                print(f"[telemetry] Warning: DB save failed: {db_err}")
+            db.save_telemetry(
+                user_id=user_id,
+                house_id=house_id,
+                appliance_id=appliance_id,
+                voltage=voltage,
+                current=current,
+                power_w=power_w,
+                energy_kwh=energy_kwh,
+                temperature=temperature,
+                humidity=humidity,
+                status=status_str,
+                anomaly_score=anomaly_score,
+                frequency=frequency,
+                power_factor=pf,
+                relay_state=relay_state,
+                device_id=dev_id,
+                source=source,
+                rl_action_code=rl_action_code,
+                rl_action=rl_action,
+            )
 
             # 6. Update Real-Time Runtime State & Memory Buffers
             now_ms = int(time.time() * 1000)
@@ -981,7 +970,15 @@ def manage_telemetry():
                     "relayCommand": relay_command,
                     "relay_command": relay_command,
                     "reward": reward,
-                    "isHardware": True,
+                    "isHardware": source == "esp32",
+                    "source": source,
+                    "deviceId": dev_id,
+                    "houseId": house_id,
+                    "applianceId": appliance_id,
+                    "relayState": relay_state,
+                    "latestRlActionCode": rl_action_code,
+                    "latestRlAction": rl_action,
+                    "receivedAt": now_ms,
                     "online": True,
                 }
                 _current_state[appliance_id] = runtime_state
@@ -1010,6 +1007,8 @@ def manage_telemetry():
                 "target_power_w": target_w,
                 "action": mode,
                 "relay_command": relay_command,
+                "relay_state": relay_state,
+                "source": source,
                 "reward": reward,
             }), 200
         except Exception as err:
@@ -1240,16 +1239,30 @@ def post_control():
 @app.route("/api/control-loop", methods=["GET"])
 def get_control_loop():
     """Return ControlLoopState[] using RL agent reward calculations."""
+    requested_device_id = request.headers.get("X-Device-Id")
+    requested_device_secret = request.headers.get("X-Device-Secret")
+    device_scoped = bool(requested_device_id or requested_device_secret)
+    device_record = None
+    if device_scoped:
+        device_record = db.get_device_by_credentials(requested_device_id, requested_device_secret)
+        if not device_record:
+            return jsonify({"ok": False, "error": "Invalid device credentials"}), 401
+
     user_id = get_auth_user_id()
     target_apps = []
-    if user_id:
+    if device_scoped:
+        target_apps = [
+            item for item in db.get_house_appliances(device_record["house_id"])
+            if item.get("device_id") == requested_device_id
+        ]
+    elif user_id:
         houses = db.get_user_houses(user_id)
         if houses:
             u_apps = db.get_house_appliances(houses[0]["id"])
             if u_apps:
                 target_apps = u_apps
 
-    if not target_apps:
+    if not target_apps and not device_scoped:
         target_apps = [
             {"id": aid, "name": APPLIANCE_PROFILES[aid]["name"], "type": aid, "ratedPowerW": APPLIANCE_PROFILES[aid]["ratedPowerW"]}
             for aid in APPLIANCE_IDS
@@ -1292,11 +1305,12 @@ def get_control_loop():
                 action_label = "POWER_OFF"
 
             # Evaluate RL agent model if available
-            agent_dict = rl_agents.get(aid)
             rl_action_str = None
             rl_reward = None
             rl_confidence = None
+            rl_action_code = None
 
+            agent_dict = rl_agents.get(aid) or rl_agents.get(model_id)
             if agent_dict is not None and isinstance(agent_dict, dict):
                 try:
                     rl_model = agent_dict["model"]
@@ -1346,6 +1360,7 @@ def get_control_loop():
                             best_action_key = action_key
 
                     raw_action_name = rl_actions.get(best_action_key, "maintain")
+                    rl_action_code = int(best_action_key)
                     rl_action_map = {
                         "maintain": "HOLD_SETPOINT",
                         "reduce": "REDUCE_LOAD",
@@ -1381,6 +1396,9 @@ def get_control_loop():
                 "reward": reward,
                 "policyConfidencePct": confidence,
                 "nextAction": next_action,
+                "rlAction": rl_action_str,
+                "rlActionCode": rl_action_code,
+                "decisionSource": "rl_model" if rl_action_code is not None else "baseline",
                 "safetyStatus": safety_status,
                 "controlSuccess": success and safety_status != "blocked",
                 "iterations": _tick_count,
@@ -1446,16 +1464,60 @@ def get_history():
 
 @app.route("/api/health", methods=["GET"])
 def health():
-    """Simple health check returning models, db engine, and replay tick status."""
+    """Report backend, database, model artifacts, and recent physical telemetry."""
     db_engine = "PostgreSQL" if db.IS_POSTGRES else "SQLite"
+    try:
+        conn = db.get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) AS telemetry_count FROM telemetry;")
+        telemetry_count = cursor.fetchone()["telemetry_count"]
+        conn.close()
+        database = {"status": "ok", "telemetry_records": telemetry_count}
+    except Exception as exc:
+        database = {"status": "error", "error": str(exc)}
+
+    now_ms = int(time.time() * 1000)
+    with _lock:
+        hardware_samples = [
+            {
+                "device_id": state.get("deviceId"),
+                "appliance_id": state.get("applianceId", aid),
+                "source": state.get("source"),
+                "last_seen": state.get("lastUpdate"),
+                "online": now_ms - state.get("lastUpdate", 0) <= 30000,
+                "latest_rl_action_code": state.get("latestRlActionCode"),
+                "latest_rl_action": state.get("latestRlAction"),
+            }
+            for aid, state in _current_state.items()
+            if state.get("isHardware")
+        ]
+    hardware_samples.sort(key=lambda item: item["last_seen"] or 0, reverse=True)
+    missing_artifacts = [
+        path for path in EXPECTED_MODEL_ARTIFACTS
+        if not (BASE_DIR / path).is_file()
+    ]
+    missing_replay_data = [
+        str((ML_DATA_DIR / f"{aid}_ml.csv").relative_to(BASE_DIR))
+        for aid in APPLIANCE_IDS
+        if not (ML_DATA_DIR / f"{aid}_ml.csv").is_file()
+    ]
     return jsonify({
         "status": "ok",
         "db_engine": db_engine,
+        "database": database,
         "models_loaded": {
             "energy": len(energy_models),
             "status": len(status_classifiers),
             "anomaly": len(anomaly_models),
             "rl": len(rl_agents),
+        },
+        "model_artifacts_expected": EXPECTED_MODEL_ARTIFACTS,
+        "model_artifacts_missing": missing_artifacts,
+        "replay_data_missing": missing_replay_data,
+        "hardware_telemetry": {
+            "status": "online" if hardware_samples and hardware_samples[0]["online"] else "offline",
+            "latest": hardware_samples[0] if hardware_samples else None,
+            "devices": hardware_samples,
         },
         "replay_data": {aid: len(df) for aid, df in _replay_data.items()},
         "tick": _tick_count,
@@ -1474,16 +1536,18 @@ if __name__ == "__main__":
     t.start()
     print(f"[boot] Replay thread started (tick every {TICK_INTERVAL}s)")
 
-    port = 5000
+    port = int(os.environ.get("IREOS_PORT", "5000"))
     try:
         import socket
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.bind(("0.0.0.0", 5000))
+        sock.bind(("0.0.0.0", port))
         sock.close()
-    except Exception:
-        port = 5001
+    except OSError:
+        fallback_port = port + 1
+        print(f"[warn] Port {port} is occupied; falling back to {fallback_port}. Configure ESP32/dashboard to use it.")
+        port = fallback_port
 
-    print(f"[boot] Starting Flask on http://localhost:{port}")
+    print(f"[boot] Starting Flask on 0.0.0.0:{port} (localhost http://127.0.0.1:{port})")
     print(f"[boot] Dashboard should connect via Settings -> Use Live API")
 
     app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)

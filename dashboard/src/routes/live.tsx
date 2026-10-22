@@ -163,15 +163,15 @@ export function LivePage() {
           />
           <SensorBox
             label="Line Frequency"
-            value="Not available"
-            sensor="Unreported hardware metric"
-            muted
+            value={snapshot.frequencyHz !== undefined ? `${snapshot.frequencyHz.toFixed(2)} Hz` : "Not reported"}
+            sensor="PZEM-004T V3"
+            muted={snapshot.frequencyHz === undefined}
           />
           <SensorBox
             label="Power Factor (PF)"
-            value="Not available"
-            sensor="Unreported hardware metric"
-            muted
+            value={snapshot.powerFactor !== undefined ? snapshot.powerFactor.toFixed(2) : "Not reported"}
+            sensor="PZEM-004T V3"
+            muted={snapshot.powerFactor === undefined}
           />
         </div>
 
@@ -180,22 +180,30 @@ export function LivePage() {
           <div>
             <span className="text-muted-foreground block text-[11px]">Relay Hardware Output</span>
             <span className="font-semibold text-emerald-600 dark:text-emerald-400">
-              {activeHardwareRt?.status === "off" ? "OFF (Open / HIGH)" : "ON (Closed / LOW)"}
+              {activeHardwareRt?.status === "off" ? "OFF (Open / HIGH)" : activeHardwareRt?.status === "on" ? "ON (Closed / LOW)" : "Unknown"}
             </span>
           </div>
           <div>
             <span className="text-muted-foreground block text-[11px]">Device ID</span>
-            <span className="font-semibold">{activeHardwareRt?.id || "DEV-638C71FE"}</span>
+            <span className="font-semibold">{(activeHardwareRt as any)?.deviceId || "Not connected"}</span>
           </div>
           <div>
             <span className="text-muted-foreground block text-[11px]">Primary Appliance ID</span>
-            <span className="font-semibold">{snapshot.primaryApplianceId || "APP-79290D01"}</span>
+            <span className="font-semibold">{snapshot.primaryApplianceId || "Not connected"}</span>
           </div>
           <div>
             <span className="text-muted-foreground block text-[11px]">Last Telemetry Arrival</span>
             <span className="font-semibold">
-              {snapshot.t ? new Date(snapshot.t).toLocaleTimeString() : "Waiting for telemetry"}
+              {activeHardwareRt?.lastSeen ? new Date(activeHardwareRt.lastSeen).toLocaleTimeString() : "Waiting for telemetry"}
             </span>
+          </div>
+          <div>
+            <span className="text-muted-foreground block text-[11px]">Telemetry source</span>
+            <span className="font-semibold">{activeHardwareRt?.source === "esp32" ? "LIVE ESP32" : activeHardwareRt?.source === "simulator" ? "SIMULATOR" : "No live hardware"}</span>
+          </div>
+          <div>
+            <span className="text-muted-foreground block text-[11px]">Latest RL decision</span>
+            <span className="font-semibold">{(activeHardwareRt as any)?.latestRlAction ?? "Awaiting control-loop action"}</span>
           </div>
         </div>
       </section>

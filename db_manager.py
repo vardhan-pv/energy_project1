@@ -184,6 +184,28 @@ def init_db():
     );
     """)
 
+    # Additive migration for hardware fields; existing telemetry rows remain valid.
+    telemetry_extensions = {
+        "frequency": "REAL",
+        "power_factor": "REAL",
+        "relay_state": "INTEGER",
+        "device_id": "TEXT",
+        "source": "TEXT",
+        "rl_action_code": "INTEGER",
+        "rl_action": "TEXT",
+    }
+    if IS_POSTGRES:
+        for column, sql_type in telemetry_extensions.items():
+            cursor.execute(
+                f"ALTER TABLE telemetry ADD COLUMN IF NOT EXISTS {column} {sql_type};"
+            )
+    else:
+        cursor.execute("PRAGMA table_info(telemetry);")
+        existing_columns = {row["name"] for row in cursor.fetchall()}
+        for column, sql_type in telemetry_extensions.items():
+            if column not in existing_columns:
+                cursor.execute(f"ALTER TABLE telemetry ADD COLUMN {column} {sql_type};")
+
     # Create indexes for telemetry fast querying
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_time ON telemetry(user_id, timestamp);")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_house_time ON telemetry(house_id, timestamp);")
@@ -645,6 +667,7 @@ def get_house_appliances(house_id: str) -> list[dict]:
 
         result.append({
             "id": aid,
+            "device_id": r["device_id"],
             "name": r["appliance_name"],
             "room": "General",
             "icon": icon,
@@ -684,16 +707,16 @@ def update_appliance_state(appliance_id: str, status: str = None, mode: str = No
     return updated
 
 
-def save_telemetry(user_id: str, house_id: str, appliance_id: str, voltage: float = 230.0, current: float = 0.0, power_w: float = 0.0, energy_kwh: float = 0.0, temperature: float = 25.0, humidity: float = 50.0, status: str = "ON", anomaly_score: float = 0.05) -> bool:
+def save_telemetry(user_id: str, house_id: str, appliance_id: str, voltage: float = 230.0, current: float = 0.0, power_w: float = 0.0, energy_kwh: float = 0.0, temperature: float = 25.0, humidity: float = 50.0, status: str = "ON", anomaly_score: float = 0.05, frequency: float = None, power_factor: float = None, relay_state: bool = None, device_id: str = None, source: str = None, rl_action_code: int = None, rl_action: str = None) -> bool:
     """Save telemetry record to database."""
     conn = get_db()
     cursor = conn.cursor()
     from datetime import timezone
     now_ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S") if not IS_POSTGRES else datetime.now(timezone.utc)
     cursor.execute("""
-        INSERT INTO telemetry (timestamp, user_id, house_id, appliance_id, voltage, current, power_w, energy_kwh, temperature, humidity, status, anomaly_score)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-    """, (now_ts, user_id, house_id, appliance_id, voltage, current, power_w, energy_kwh, temperature, humidity, status, anomaly_score))
+        INSERT INTO telemetry (timestamp, user_id, house_id, appliance_id, voltage, current, power_w, energy_kwh, temperature, humidity, status, anomaly_score, frequency, power_factor, relay_state, device_id, source, rl_action_code, rl_action)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    """, (now_ts, user_id, house_id, appliance_id, voltage, current, power_w, energy_kwh, temperature, humidity, status, anomaly_score, frequency, power_factor, None if relay_state is None else int(relay_state), device_id, source, rl_action_code, rl_action))
     conn.commit()
     conn.close()
     return True

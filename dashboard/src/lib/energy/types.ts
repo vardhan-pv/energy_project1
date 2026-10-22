@@ -84,6 +84,9 @@ export interface ApplianceRuntime {
   batteryPct?: number;
   lastSeen: number;
   isHardware?: boolean;
+  source?: "esp32" | "simulator";
+  latestRlActionCode?: number;
+  latestRlAction?: string;
   voltageV?: number;
   currentA?: number;
   humidityPct?: number;

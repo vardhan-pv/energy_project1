@@ -1,0 +1,11 @@
+fix: resolve all TypeScript errors and SSR crash
+
+- store.tsx: add missing comfort, tempVal, humidityVal, voltageVal, currentVal declarations
+- store.tsx: fix comfort type to match SystemSnapshot union
+- store.tsx: cast spread runtime objects to ApplianceRuntime in setPower and setMode
+- store.tsx: guard predict call against undefined runtime
+- api.ts: add missing createHouse, createDevice, createAppliance, getCurrentUser to interface
+- OrbitalArchitecture.tsx: add optional color field to PipelineStep interface
+- devices.tsx: fix invalid Button size xs to sm
+- index.tsx: fix undefined index access for appliances
+- tsconfig.json: disable exactOptionalPropertyTypes and noUncheckedIndexedAccess

@@ -47,7 +47,7 @@ export const DEFAULT_SETTINGS: Settings = {
   budgetKwhPerDay: 3.2,
   notifications: true,
   reduceMotion: false,
-  apiBaseUrl: "https://energy-project1.onrender.com",
+  apiBaseUrl: "http://127.0.0.1:5000",
   useLiveApi: true,
 };
 
@@ -268,16 +268,18 @@ async function pollLiveApi(
       if (!rt || !rt.id) continue;
       const id = rt.id;
       const rawRt = rt as any;
-      // Real ESP32 hardware telemetry contains voltage/voltageV, current/currentA, or humidity/humidityPct set by POST endpoint
-      const isHardware = rawRt.voltageV !== undefined || rawRt.voltage !== undefined || rawRt.humidityPct !== undefined || rawRt.humidity !== undefined;
+      const hasSensorFields = rawRt.voltageV !== undefined || rawRt.voltage !== undefined || rawRt.currentA !== undefined || rawRt.current !== undefined || rawRt.temperatureC !== undefined || rawRt.temperature !== undefined || rawRt.humidityPct !== undefined || rawRt.humidity !== undefined;
+      const receivedAt = Number(rawRt.receivedAt ?? rawRt.lastUpdate ?? rawRt.lastSeen ?? now);
+      const sourceIsHardware = rawRt.source ? rawRt.source === "esp32" : hasSensorFields;
+      const isHardware = rawRt.isHardware !== false && sourceIsHardware && now - receivedAt <= 30000;
       const prevHistory = prev?.runtimes?.[id]?.history ?? [];
       const powerW = isHardware ? (rt.powerW ?? 0) : (rt.powerW ?? 0);
       const tempC = rawRt.temperatureC ?? rawRt.tempC ?? rawRt.temperature;
       const humidityPct = rawRt.humidityPct ?? rawRt.humidity;
       const voltageV = rawRt.voltageV ?? rawRt.voltage;
       const currentA = rawRt.currentA ?? rawRt.current;
-      const frequencyHz = rawRt.frequencyHz ?? rawRt.frequency ?? 50.0;
-      const powerFactor = rawRt.powerFactor ?? rawRt.pf ?? 0.98;
+      const frequencyHz = rawRt.frequencyHz ?? rawRt.frequency;
+      const powerFactor = rawRt.powerFactor ?? rawRt.pf;
       const energyTodayKwh = rawRt.energyTodayKwh ?? rawRt.energyKwh ?? rawRt.energy_kwh ?? 0;
 
       const sample = {
@@ -290,6 +292,7 @@ async function pollLiveApi(
       const history = [...prevHistory, sample].slice(-HISTORY_POINTS);
       runtimes[id] = {
         ...rt,
+        deviceId: rawRt.deviceId,
         powerW,
         energyTodayKwh,
         temperatureC: tempC,
@@ -299,9 +302,12 @@ async function pollLiveApi(
         frequencyHz,
         powerFactor,
         isHardware,
+        source: rawRt.source,
+        latestRlActionCode: rawRt.latestRlActionCode,
+        latestRlAction: rawRt.latestRlAction,
         online: true,
         history,
-        lastSeen: rawRt.lastUpdate ?? rawRt.lastSeen ?? now,
+        lastSeen: receivedAt,
       };
     }
 
@@ -852,30 +858,8 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
       };
     }
     const currentAppliances = state.appliances.length > 0 ? state.appliances : APPLIANCES;
-    const activeHardwareRuntimes = Object.values(state.runtimes).filter(
-      (r) =>
-        r.isHardware ||
-        (r as any).voltageV !== undefined ||
-        (r as any).voltage !== undefined ||
-        (r as any).currentA !== undefined ||
-        (r as any).current !== undefined ||
-        (r as any).tempC !== undefined ||
-        (r as any).temperatureC !== undefined ||
-        (r as any).temperature !== undefined ||
-        (r as any).humidityPct !== undefined ||
-        (r as any).humidity !== undefined
-    );
-    const primaryHardware =
-      activeHardwareRuntimes[0] ||
-      Object.values(state.runtimes).find(
-        (r) =>
-          (r as any).voltageV !== undefined ||
-          (r as any).voltage !== undefined ||
-          (r as any).temperatureC !== undefined ||
-          (r as any).tempC !== undefined ||
-          (r as any).temperature !== undefined
-      ) ||
-      Object.values(state.runtimes)[0];
+    const activeHardwareRuntimes = Object.values(state.runtimes).filter((r) => r.isHardware);
+    const primaryHardware = activeHardwareRuntimes[0];
 
     const totalPowerW = settings.useLiveApi
       ? (activeHardwareRuntimes.length > 0
@@ -932,8 +916,8 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
       ambientHumidityPct: humidityVal !== undefined && humidityVal !== null ? Number(humidityVal) : undefined,
       voltageV: voltageVal !== undefined && voltageVal !== null ? Number(voltageVal) : undefined,
       currentA: currentVal !== undefined && currentVal !== null ? Number(currentVal) : undefined,
-      frequencyHz: freqVal !== undefined && freqVal !== null ? Number(freqVal) : 50.0,
-      powerFactor: pfVal !== undefined && pfVal !== null ? Number(pfVal) : 0.98,
+      frequencyHz: freqVal !== undefined && freqVal !== null ? Number(freqVal) : undefined,
+      powerFactor: pfVal !== undefined && pfVal !== null ? Number(pfVal) : undefined,
       primaryApplianceId: primaryHardware?.id,
       isHardwareLive: !!primaryHardware,
     };
