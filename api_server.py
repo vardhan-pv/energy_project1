@@ -38,6 +38,7 @@ ML_MODELS_DIR = BASE_DIR / "ml_models"
 RL_MODELS_DIR = BASE_DIR / "rl_models"
 PEAK_MODELS_DIR = BASE_DIR / "peak_models"
 ML_DATA_DIR = BASE_DIR / "ml_data"
+APPLIANCE_IDS = ["laptop", "kitchen_lights", "office_fan", "fridge"]
 
 EXPECTED_MODEL_ARTIFACTS = [
     str(path.relative_to(BASE_DIR))
@@ -49,8 +50,10 @@ EXPECTED_MODEL_ARTIFACTS = [
         RL_MODELS_DIR / f"{aid}_rl_agent.pkl",
     )
 ]
-
-APPLIANCE_IDS = ["laptop", "kitchen_lights", "office_fan", "fridge"]
+EXPECTED_MODEL_ARTIFACTS.extend([
+    "ml_models/model_comparison.csv",
+    "ml_models/status_classifier_comparison.csv",
+])
 
 # ---------------------------------------------------------------------------
 # Appliance meta — matches the dashboard's ApplianceProfile type
@@ -852,6 +855,8 @@ def manage_telemetry():
                 if rl_action_code is not None and rl_action_code not in range(4):
                     raise ValueError("latest_rl_action_code must be between 0 and 3")
                 rl_action = data.get("latest_rl_action")
+                if power_w is None:
+                    raise ValueError("power_w is unavailable; wait for a valid PZEM reading")
             except Exception as e:
                 return jsonify({"ok": False, "error": f"Invalid telemetry numeric format: {e}"}), 400
 
@@ -884,6 +889,53 @@ def manage_telemetry():
                 anomaly_score = _anomaly_score(model_id, features)
             except Exception:
                 anomaly_score = 0.05
+
+            action_code = None
+            action_name = None
+            action_source = "baseline"
+            agent_dict = rl_agents.get(appliance_id) or rl_agents.get(model_id)
+            if agent_dict is not None and isinstance(agent_dict, dict):
+                try:
+                    rl_model = agent_dict["model"]
+                    rl_scaler = agent_dict.get("scaler")
+                    rl_features = agent_dict["features"]
+                    rl_actions = agent_dict["actions"]
+                    now_dt = datetime.now()
+                    sample = {
+                        "power_w": power_w,
+                        "energy_kwh": energy_kwh,
+                        "hour": now_dt.hour,
+                        "day_of_week": now_dt.weekday(),
+                        "is_weekend": int(now_dt.weekday() >= 5),
+                        "power_lag_1": power_w,
+                        "power_lag_5": power_w,
+                        "power_rolling_mean": power_w,
+                        "power_rolling_max": power_w,
+                        "anomaly_score": anomaly_score,
+                        "peak_risk": int(anomaly_score > 0.6),
+                        "user_behavior_score": 0.8,
+                        "energy_routine_index": 0.85,
+                        "dsc_score": 0.9,
+                        "stability_score": 0.95,
+                        "change_score": 0.05,
+                        "cdi_score": 0.88,
+                        "action": 0,
+                    }
+                    best_value = -float("inf")
+                    for candidate_code, candidate_name in rl_actions.items():
+                        sample["action"] = candidate_code
+                        vector = pd.DataFrame([sample])[rl_features]
+                        if rl_scaler is not None:
+                            vector = rl_scaler.transform(vector)
+                        value = float(rl_model.predict(vector)[0])
+                        if value > best_value:
+                            best_value = value
+                            action_code = int(candidate_code)
+                            action_name = str(candidate_name)
+                    if action_code is not None:
+                        action_source = "rl_model"
+                except Exception as rl_err:
+                    print(f"[rl_telemetry] Could not evaluate RL agent for {appliance_id}: {rl_err}")
 
             try:
                 predicted_power = _predict_power(model_id, features)
@@ -925,8 +977,8 @@ def manage_telemetry():
                 relay_state=relay_state,
                 device_id=dev_id,
                 source=source,
-                rl_action_code=rl_action_code,
-                rl_action=rl_action,
+                rl_action_code=action_code if action_code is not None else rl_action_code,
+                rl_action=action_name or rl_action,
             )
 
             # 6. Update Real-Time Runtime State & Memory Buffers
@@ -962,6 +1014,7 @@ def manage_telemetry():
                     "energy_kwh": energy_kwh,
                     "anomalyScore": anomaly_score,
                     "anomaly_score": anomaly_score,
+                    "risk": _risk_level(anomaly_score),
                     "isAnomaly": anomaly_score > 0.65,
                     "lastUpdate": now_ms,
                     "lastSeen": now_ms,
@@ -969,6 +1022,9 @@ def manage_telemetry():
                     "predicted_power_w": pred_val,
                     "relayCommand": relay_command,
                     "relay_command": relay_command,
+                    "latestRlActionCode": action_code,
+                    "latestRlAction": action_name,
+                    "decisionSource": action_source,
                     "reward": reward,
                     "isHardware": source == "esp32",
                     "source": source,
@@ -1000,8 +1056,16 @@ def manage_telemetry():
                 "ok": True,
                 "status": "accepted",
                 "device_id": dev_id,
+                "house_id": house_id,
                 "appliance_id": appliance_id,
+                "voltage": voltage,
+                "current": current,
                 "power_w": power_w,
+                "energy_kwh": energy_kwh,
+                "frequency": frequency,
+                "pf": pf,
+                "temperature": temperature,
+                "humidity": humidity,
                 "anomaly_score": anomaly_score,
                 "predicted_power_w": pred_val,
                 "target_power_w": target_w,
@@ -1009,6 +1073,9 @@ def manage_telemetry():
                 "relay_command": relay_command,
                 "relay_state": relay_state,
                 "source": source,
+                "latest_rl_action_code": action_code if action_code is not None else rl_action_code,
+                "latest_rl_action": action_name or rl_action,
+                "decision_source": action_source,
                 "reward": reward,
             }), 200
         except Exception as err:
@@ -1261,6 +1328,19 @@ def get_control_loop():
             u_apps = db.get_house_appliances(houses[0]["id"])
             if u_apps:
                 target_apps = u_apps
+
+    if not target_apps and not device_scoped:
+        # Include the current physical appliance in anonymous/live dashboard
+        # control-loop polling instead of returning only demo appliance rows.
+        for hardware_state in _current_state.values():
+            if not hardware_state.get("isHardware"):
+                continue
+            house_id = hardware_state.get("houseId")
+            appliance_id = hardware_state.get("applianceId")
+            if not house_id or not appliance_id:
+                continue
+            registered_apps = db.get_house_appliances(house_id)
+            target_apps.extend(app for app in registered_apps if app["id"] == appliance_id)
 
     if not target_apps and not device_scoped:
         target_apps = [

@@ -153,13 +153,15 @@ export function LivePage() {
           />
           <SensorBox
             label="AC Power Draw"
-            value={fmtW(snapshot.totalPowerW, 2)}
+            value={activeHardwareRt ? fmtW(snapshot.totalPowerW, 2) : "Not available"}
             sensor="PZEM Real-Time Power"
+            muted={!activeHardwareRt}
           />
           <SensorBox
             label="Energy Accumulation"
-            value={fmtKwh(snapshot.energyTodayKwh)}
+            value={activeHardwareRt ? fmtKwh(snapshot.energyTodayKwh) : "Not available"}
             sensor="PZEM Energy Register"
+            muted={!activeHardwareRt}
           />
           <SensorBox
             label="Line Frequency"

@@ -18,6 +18,7 @@ Command Line Options:
 """
 
 import sys
+import io
 import time
 import math
 import random
@@ -25,6 +26,11 @@ import argparse
 import urllib.request
 import urllib.error
 import json
+
+
+# Fix Unicode output on Windows terminals
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
 
 def parse_args():
@@ -80,7 +86,7 @@ def generate_telemetry(step_count: int, appliance_type: str, rated_power: float,
     humidity_pct = round(52.0 - 2.0 * math.sin(step_count / 15.0) + random.uniform(-1.0, 1.0), 1)
 
     return {
-        "appliance_id": appetite_clean := appliance_id_clean(appliance_type),
+        "appliance_id": appliance_id_clean(appliance_type),
         "voltage": voltage,
         "current": current_a,
         "power_w": power_w,
@@ -141,14 +147,14 @@ def main():
         try:
             with urllib.request.urlopen(req, timeout=10.0) as res:
                 resp_data = json.loads(res.read().decode("utf-8"))
-                print(f"  └─ HTTP {res.status} OK -> Server Status: {resp_data.get('status')} | Anomaly Score: {resp_data.get('anomaly_score', 0.05):.4f}")
+                print(f"  >> HTTP {res.status} OK -> Server Status: {resp_data.get('status')} | Anomaly Score: {resp_data.get('anomaly_score', 0.05):.4f}")
         except urllib.error.HTTPError as e:
             err_msg = e.read().decode("utf-8")
-            print(f"  └─ HTTP ERROR {e.code}: {err_msg}")
+            print(f"  >> HTTP ERROR {e.code}: {err_msg}")
         except urllib.error.URLError as e:
-            print(f"  └─ CONNECTION FAILED: {e.reason}")
+            print(f"  >> CONNECTION FAILED: {e.reason}")
         except Exception as e:
-            print(f"  └─ ERROR: {e}")
+            print(f"  >> ERROR: {e}")
 
         time.sleep(args.interval)
 

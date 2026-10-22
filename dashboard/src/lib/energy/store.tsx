@@ -864,13 +864,13 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
     const totalPowerW = settings.useLiveApi
       ? (activeHardwareRuntimes.length > 0
           ? activeHardwareRuntimes.reduce((s, r) => s + (r.powerW ?? (r as any).power_w ?? 0), 0)
-          : (state.runtimes["APP-1967426F"]?.powerW ?? state.runtimes["laptop"]?.powerW ?? Object.values(state.runtimes)[0]?.powerW ?? 0))
+          : 0)
       : currentAppliances.reduce((s, p) => s + (state.runtimes[p.id]?.powerW ?? 0), 0);
 
     const energyTodayKwh = settings.useLiveApi
       ? (activeHardwareRuntimes.length > 0
           ? activeHardwareRuntimes.reduce((s, r) => s + (r.energyTodayKwh ?? (r as any).energyKwh ?? (r as any).energy_kwh ?? 0), 0)
-          : (state.runtimes["APP-1967426F"]?.energyTodayKwh ?? Object.values(state.runtimes)[0]?.energyTodayKwh ?? 0))
+          : 0)
       : currentAppliances.reduce((s, p) => s + (state.runtimes[p.id]?.energyTodayKwh ?? 0), 0);
 
     const savingsKwh = energyTodayKwh * (settings.ecoTargetPct / 100) * (settings.autopilot ? 1 : 0.35);

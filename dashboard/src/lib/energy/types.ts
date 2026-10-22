@@ -84,6 +84,7 @@ export interface ApplianceRuntime {
   batteryPct?: number;
   lastSeen: number;
   isHardware?: boolean;
+  deviceId?: string;
   source?: "esp32" | "simulator";
   latestRlActionCode?: number;
   latestRlAction?: string;
