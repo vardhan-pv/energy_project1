@@ -32,6 +32,7 @@ export interface PipelineStep {
   description: string;
   details: string[];
   hardwareNote?: string;
+  color?: string;
 }
 
 export const ARCHITECTURE_STEPS: PipelineStep[] = [

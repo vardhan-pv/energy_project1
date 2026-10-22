@@ -690,7 +690,7 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
           ...prev,
           runtimes: {
             ...prev.runtimes,
-            [id]: { ...rt, status, powerW: on ? (rt?.powerW ?? 0) : 0, targetPowerW: targetPowerW(profile, rt?.mode ?? "maintain", status) },
+            [id]: { ...rt, id, status, powerW: on ? (rt?.powerW ?? 0) : 0, targetPowerW: targetPowerW(profile, rt?.mode ?? "maintain", status) } as ApplianceRuntime,
           },
         };
       });
@@ -708,7 +708,7 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
         const rt = prev.runtimes[id];
         return {
           ...prev,
-          runtimes: { ...prev.runtimes, [id]: { ...rt, mode, targetPowerW: targetPowerW(profile, mode, rt?.status ?? "on") } },
+          runtimes: { ...prev.runtimes, [id]: { ...rt, id, mode, targetPowerW: targetPowerW(profile, mode, rt?.status ?? "on") } as ApplianceRuntime },
         };
       });
       pushEvent("success", `${profile.name} set to ${mode}`, "Control policy updated and applied.", "user", id);
@@ -796,8 +796,9 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
     if (!state) return out;
     const currentAppliances = state.appliances.length > 0 ? state.appliances : APPLIANCES;
     for (const p of currentAppliances) {
-      if (state.runtimes[p.id]) {
-        out[p.id] = predict(state.runtimes[p.id], horizonMinutes, state.now);
+      const rt = state.runtimes[p.id];
+      if (rt) {
+        out[p.id] = predict(rt, horizonMinutes, state.now);
       }
     }
     return out;
@@ -892,8 +893,31 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
     const risky = currentAppliances.some((p) => state.runtimes[p.id]?.risk === "risk");
     const watch = currentAppliances.some((p) => state.runtimes[p.id]?.risk === "watch");
 
+    const tempVal =
+      primaryHardware?.temperatureC ??
+      (primaryHardware as any)?.tempC ??
+      (primaryHardware as any)?.temperature;
+    const humidityVal =
+      primaryHardware?.humidityPct ??
+      (primaryHardware as any)?.humidity;
+    const voltageVal =
+      primaryHardware?.voltageV ??
+      (primaryHardware as any)?.voltage;
+    const currentVal =
+      primaryHardware?.currentA ??
+      (primaryHardware as any)?.current;
+
     const freqVal = primaryHardware?.frequencyHz ?? (primaryHardware as any)?.frequency;
     const pfVal = primaryHardware?.powerFactor ?? (primaryHardware as any)?.pf;
+
+    const comfort: "optimal" | "acceptable" | "attention" =
+      tempVal !== undefined && tempVal !== null
+        ? Number(tempVal) >= 18 && Number(tempVal) <= 26
+          ? "optimal"
+          : Number(tempVal) >= 15 && Number(tempVal) <= 30
+          ? "acceptable"
+          : "attention"
+        : "optimal";
 
     return {
       t: state.now,

@@ -120,7 +120,7 @@ export function DevicesPage() {
               </span>
               <Button
                 variant="ghost"
-                size="xs"
+                size="sm"
                 onClick={() => {
                   navigator.clipboard.writeText(newSecret);
                   toast.success("Secret copied to clipboard!");

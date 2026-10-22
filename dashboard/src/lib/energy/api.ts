@@ -45,9 +45,15 @@ export interface UserProfile {
 export interface EnergyDataSource {
   register(name: string, email: string, password: string): Promise<{ ok: boolean; user: UserProfile; token: string }>;
   login(identifier: string, password: string): Promise<{ ok: boolean; user: UserProfile; token: string }>;
+  getCurrentUser(): Promise<{ ok: boolean; user: UserProfile }>;
   updateProfile(name?: string, email?: string): Promise<{ ok: boolean; user: UserProfile }>;
+  createHouse(houseName: string, location?: string): Promise<{ ok: boolean; house: House }>;
   updateHouse(houseId: string, houseName?: string, location?: string): Promise<{ ok: boolean; house: House }>;
+  getHouses(): Promise<House[]>;
+  createDevice(deviceType: string, deviceName: string, macAddress?: string): Promise<{ ok: boolean; device: any }>;
+  getDevices(): Promise<any[]>;
   resetDeviceSecret(deviceId: string): Promise<{ ok: boolean; device_id: string; new_secret: string }>;
+  createAppliance(deviceId: string | null, name: string, type: string, ratedPowerW: number): Promise<{ ok: boolean; appliance: any }>;
   deleteAppliance(applianceId: string): Promise<{ ok: boolean }>;
   getHouse(): Promise<House>;
   listAppliances(): Promise<ApplianceProfile[]>;
