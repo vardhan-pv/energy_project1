@@ -84,8 +84,10 @@ export interface EnergyDataSource {
 }
 
 /** HTTP implementation with optional Bearer JWT token support. */
-export function createHttpDataSource(baseUrl: string, getToken?: () => string | null): EnergyDataSource {
-  const url = (p: string) => `${baseUrl.replace(/\/$/, "")}${p}`;
+export function createHttpDataSource(baseUrl?: string, getToken?: () => string | null): EnergyDataSource {
+  const boundBackendUrl = typeof process !== "undefined" ? process.env?.ENERGY_BACKEND_URL : undefined;
+  const effectiveBase = baseUrl && baseUrl.trim() !== "" ? baseUrl : (boundBackendUrl || "");
+  const url = (p: string) => `${effectiveBase.replace(/\/$/, "")}${p}`;
   const json = async <T>(p: string, init?: RequestInit): Promise<T> => {
     const token = getToken ? getToken() : null;
     const reqHeaders: Record<string, string> = { "content-type": "application/json" };

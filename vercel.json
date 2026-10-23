@@ -1,4 +1,38 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "node build.js"
+  "services": {
+    "energy-backend": {
+      "root": ".",
+      "framework": "flask",
+      "entrypoint": "api_server.py",
+      "buildCommand": "pip install -r requirements.txt"
+    },
+    "dashboard": {
+      "root": "dashboard",
+      "framework": "tanstack-start-lovable",
+      "buildCommand": "npm run build",
+      "bindings": [
+        {
+          "type": "service",
+          "service": "energy-backend",
+          "format": "url",
+          "env": "ENERGY_BACKEND_URL"
+        }
+      ]
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": {
+        "service": "energy-backend"
+      }
+    },
+    {
+      "source": "/(.*)",
+      "destination": {
+        "service": "dashboard"
+      }
+    }
+  ]
 }
