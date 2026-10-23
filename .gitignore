@@ -160,9 +160,11 @@ dashboard/.output/
 dashboard/.wrangler/
 dashboard/.tanstack/
 dashboard/dist/
+dashboard/.vercel/
 .output/
 .wrangler/
 .tanstack/
+.vercel/
 node_modules/
 
 # Energy Project Data & Large Files

@@ -6,6 +6,6 @@
     "dashboard"
   ],
   "scripts": {
-    "build": "npm run build --workspace=dashboard"
+    "build": "node build.js"
   }
 }

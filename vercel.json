@@ -1,5 +1,4 @@
 {
-  "buildCommand": "npm run build --workspace=dashboard",
-  "outputDirectory": "dashboard/.output/public",
-  "framework": "vite"
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "node build.js"
 }
