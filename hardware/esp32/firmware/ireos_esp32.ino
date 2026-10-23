@@ -11,7 +11,7 @@
 // ----------------------------- Site configuration ----------------------------
 // Change the host whenever Flask runs on another laptop/network. It must match
 // the port printed by api_server.py (default 5000, fallback 5001).
-static const char *BACKEND_BASE_URL = "http://10.106.86.45:5000";
+static const char *BACKEND_BASE_URL = "http://10.106.86.150:5000";
 static const char *DEVICE_ID = "SET_DEVICE_ID";       // from register_physical_esp32.py
 static const char *DEVICE_SECRET = "SET_DEVICE_SECRET"; // keep private; never commit real credentials
 static const char *APPLIANCE_ID = "SET_APPLIANCE_ID";  // from register_physical_esp32.py

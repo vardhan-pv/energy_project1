@@ -7,7 +7,7 @@ Simulates a physical ESP32 microcontroller with sensors (voltage, current,
 temperature, humidity) sending hardware-ready telemetry over HTTP POST.
 
 Command Line Options:
-  --backend          Base API URL (default: http://127.0.0.1:5000)
+  --backend          Base API URL (default: http://10.106.86.150:5000)
   --device-id        Device ID (DEV-XXXXXXXX)
   --device-secret    Device Secret token (SEC-XXXXXXXX)
   --appliance-id     Target Appliance ID (APP-XXXXXXXX)
