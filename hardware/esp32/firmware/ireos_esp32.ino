@@ -9,9 +9,10 @@
 #include <hd44780ioClass/hd44780_I2Cexp.h>
 
 // ----------------------------- Site configuration ----------------------------
-// Change the host whenever Flask runs on another laptop/network. It must match
-// the port printed by api_server.py (default 5000, fallback 5001).
-static const char *BACKEND_BASE_URL = "http://10.106.86.150:5000";
+// Set BACKEND_BASE_URL to your deployed Vercel URL (e.g., "https://<your-project>.vercel.app")
+// or local LAN IP when running api_server.py locally (e.g. "http://192.168.1.100:5000").
+// All telemetry and control calls append /api/telemetry and /api/control-loop.
+static const char *BACKEND_BASE_URL = "https://energy-project1.vercel.app";
 static const char *DEVICE_ID = "SET_DEVICE_ID";       // from register_physical_esp32.py
 static const char *DEVICE_SECRET = "SET_DEVICE_SECRET"; // keep private; never commit real credentials
 static const char *APPLIANCE_ID = "SET_APPLIANCE_ID";  // from register_physical_esp32.py
