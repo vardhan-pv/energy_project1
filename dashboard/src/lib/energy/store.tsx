@@ -47,9 +47,9 @@ export const DEFAULT_SETTINGS: Settings = {
   budgetKwhPerDay: 3.2,
   notifications: true,
   reduceMotion: false,
-  apiBaseUrl: (typeof process !== "undefined" && process.env?.ENERGY_BACKEND_URL)
-    ? process.env.ENERGY_BACKEND_URL
-    : "http://127.0.0.1:5000",
+  apiBaseUrl:
+    (typeof import.meta !== "undefined" && (import.meta as any).env?.VITE_API_BASE_URL) ||
+    "https://energy-project1.onrender.com",
   useLiveApi: true,
 };
 

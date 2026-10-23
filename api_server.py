@@ -529,6 +529,27 @@ def add_cors_headers(response):
     return response
 
 
+_server_initialized = False
+
+def init_server():
+    global _server_initialized
+    if not _server_initialized:
+        _server_initialized = True
+        try:
+            load_models()
+        except Exception as e:
+            print(f"[boot] load_models error: {e}")
+        try:
+            load_replay_data()
+        except Exception as e:
+            print(f"[boot] load_replay_data error: {e}")
+        t = threading.Thread(target=_replay_loop, daemon=True)
+        t.start()
+        print(f"[boot] Replay thread started (tick every {TICK_INTERVAL}s)")
+
+init_server()
+
+
 def get_auth_user_id():
     """Extract authenticated user_id from Authorization: Bearer <token> header."""
     auth_header = request.headers.get("Authorization")
@@ -1608,13 +1629,7 @@ def health():
 # Main
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    load_models()
-    load_replay_data()
-
-    # Start the replay thread
-    t = threading.Thread(target=_replay_loop, daemon=True)
-    t.start()
-    print(f"[boot] Replay thread started (tick every {TICK_INTERVAL}s)")
+    init_server()
 
     port = int(os.environ.get("IREOS_PORT", "5000"))
     try:
