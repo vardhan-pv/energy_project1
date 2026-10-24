@@ -50,5 +50,38 @@ export const getRouter = () => {
     enumerable: true,
   });
 
+  // Polyfill router.stores: @tanstack/start-client-core's hydrateStart calls router.stores.ids.get().length.
+  // Newer/mismatched router-core instances may not expose stores.ids immediately on client startup.
+  let _stores = (router as any).stores;
+  Object.defineProperty(router, "stores", {
+    get() {
+      if (!_stores) {
+        _stores = {
+          ids: {
+            get: () => (router as any).state?.matches?.map((m: any) => m.routeId) || [],
+          },
+          matches: {
+            get: () => (router as any).state?.matches || [],
+          },
+        };
+      } else if (!_stores.ids) {
+        _stores.ids = {
+          get: () => _stores.matches?.get?.()?.map((m: any) => m.routeId) || (router as any).state?.matches?.map((m: any) => m.routeId) || [],
+        };
+      }
+      return _stores;
+    },
+    set(v) {
+      if (v && !v.ids) {
+        v.ids = {
+          get: () => v.matches?.get?.()?.map((m: any) => m.routeId) || (router as any).state?.matches?.map((m: any) => m.routeId) || [],
+        };
+      }
+      _stores = v;
+    },
+    configurable: true,
+    enumerable: true,
+  });
+
   return router;
 };
