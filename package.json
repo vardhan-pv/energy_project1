@@ -10,8 +10,6 @@
   },
   "dependencies": {
     "@neon/config": "^1.9.3",
-    "@neon/env": "^1.6.4",
-    "@tanstack/history": "^1.162.4",
-    "@tanstack/router-core": "^1.171.34"
+    "@neon/env": "^1.6.4"
   }
 }

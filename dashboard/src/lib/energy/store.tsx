@@ -244,7 +244,9 @@ async function pollLiveApi(
 
     const housePromise = ds.getHouse().catch(() => defaultHouse);
     const appliancesPromise = ds.listAppliances().catch(() => []);
-    const telemetryPromise = ds.getTelemetry().catch(() => []);
+    // Telemetry is the core live-data request. Treat its failure as a failed
+    // poll instead of silently displaying stale/demo values as a connection.
+    const telemetryPromise = ds.getTelemetry();
     const controlLoopPromise = ds.getControlLoop().catch(() => []);
     const alertsPromise = ds.getAlerts().catch(() => []);
 
@@ -270,9 +272,10 @@ async function pollLiveApi(
       if (!rt || !rt.id) continue;
       const id = rt.id;
       const rawRt = rt as any;
-      const hasSensorFields = rawRt.voltageV !== undefined || rawRt.voltage !== undefined || rawRt.currentA !== undefined || rawRt.current !== undefined || rawRt.temperatureC !== undefined || rawRt.temperature !== undefined || rawRt.humidityPct !== undefined || rawRt.humidity !== undefined;
       const receivedAt = Number(rawRt.receivedAt ?? rawRt.lastUpdate ?? rawRt.lastSeen ?? now);
-      const sourceIsHardware = rawRt.source ? rawRt.source === "esp32" : hasSensorFields;
+      // The API can also return appliance/demo defaults with sensor-like fields.
+      // Only explicit ESP32-tagged telemetry is trusted as physical hardware.
+      const sourceIsHardware = rawRt.source === "esp32";
       const isHardware = rawRt.isHardware !== false && sourceIsHardware && now - receivedAt <= 30000;
       const prevHistory = prev?.runtimes?.[id]?.history ?? [];
       const powerW = isHardware ? (rt.powerW ?? 0) : (rt.powerW ?? 0);
@@ -384,6 +387,8 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
+  const stateRef = useRef(state);
+  stateRef.current = state;
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -494,7 +499,7 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
     const poll = async () => {
       if (cancelled) return;
       const currentDs = createHttpDataSource(settingsRef.current.apiBaseUrl, () => token);
-      const result = await pollLiveApi(currentDs, horizonMinutes, state, settingsRef.current);
+      const result = await pollLiveApi(currentDs, horizonMinutes, stateRef.current, settingsRef.current);
 
       if (cancelled) return;
       if (result) {
@@ -535,7 +540,7 @@ export function EnergyProvider({ children }: { children: ReactNode }) {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [settings.useLiveApi, settings.apiBaseUrl, settings.refreshMs]);
+  }, [settings.useLiveApi, settings.apiBaseUrl, settings.refreshMs, token]);
 
   // ---- Simulation loop (only when NOT using live API) -----------------------
   useEffect(() => {

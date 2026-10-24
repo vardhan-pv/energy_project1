@@ -72,8 +72,8 @@ function Overview() {
   });
 
   const budgetPct = (snapshot.energyTodayKwh / settings.budgetKwhPerDay) * 100;
-  const activeHardwareRt = Object.values(runtimes).find((r) => r.isHardware) || (firstAppId ? runtimes[firstAppId] : Object.values(runtimes)[0]);
-  const activeLoop = firstAppId ? loops[firstAppId] : undefined;
+  const activeHardwareRt = Object.values(runtimes).find((r) => r.isHardware);
+  const activeLoop = activeHardwareRt?.id ? loops[activeHardwareRt.id] : undefined;
   const relayCommandConfirmed = activeHardwareRt?.status !== undefined;
 
   return (
@@ -89,32 +89,32 @@ function Overview() {
             <StatusPill
               icon={Server}
               label="Backend"
-              value={settings.useLiveApi ? "Render Flask API" : "Simulated"}
-              tone="success"
+              value={settings.useLiveApi ? "Live API" : "Simulated"}
+              tone={settings.useLiveApi ? "success" : "info"}
             />
             <StatusPill
               icon={Database}
               label="Database"
-              value={settings.useLiveApi ? "Render PostgreSQL" : "SQLite Demo"}
-              tone="success"
+              value={settings.useLiveApi ? "Backend database" : "SQLite Demo"}
+              tone={settings.useLiveApi ? "success" : "info"}
             />
             <StatusPill
               icon={Cpu}
               label="ESP32 Node"
-              value={snapshot.isHardwareLive ? "ONLINE (DEV-638C71FE)" : "Offline / Simulation"}
+              value={snapshot.isHardwareLive ? `ONLINE (${activeHardwareRt?.deviceId ?? "ESP32"})` : "Waiting for hardware"}
               tone={snapshot.isHardwareLive ? "success" : "warning"}
             />
             <StatusPill
               icon={Radio}
               label="Telemetry"
-              value={snapshot.isHardwareLive ? "PZEM-004T + DHT22" : "Simulated Stream"}
-              tone={snapshot.isHardwareLive ? "success" : "info"}
+              value={snapshot.isHardwareLive ? "PZEM-004T + DHT22" : "No live readings"}
+              tone={snapshot.isHardwareLive ? "success" : "warning"}
             />
             <StatusPill
               icon={Zap}
               label="Mode"
-              value={settings.useLiveApi ? "LIVE HARDWARE" : "SIMULATION"}
-              tone={settings.useLiveApi ? "success" : "warning"}
+              value={snapshot.isHardwareLive ? "LIVE HARDWARE" : settings.useLiveApi ? "WAITING FOR HARDWARE" : "SIMULATION"}
+              tone={snapshot.isHardwareLive ? "success" : "warning"}
             />
           </div>
         </div>
@@ -123,24 +123,24 @@ function Overview() {
       {/* 2. LIVE PHYSICAL ESP32 HARDWARE TELEMETRY PANEL (EXACT DATA STREAM) */}
       <section aria-label="Live Telemetry Panel">
         <LiveTelemetryPanel
-          voltageV={snapshot.voltageV ?? 230.4}
-          currentA={snapshot.currentA ?? (snapshot.totalPowerW ? snapshot.totalPowerW / 230.4 : 0.45)}
-          powerW={snapshot.totalPowerW ?? 0.4}
-          energyKwh={snapshot.energyTodayKwh ?? 0.0}
-          temperatureC={snapshot.ambientTempC ?? 46.8}
-          humidityPct={snapshot.ambientHumidityPct ?? 58.0}
-          frequencyHz={snapshot.frequencyHz ?? 50.0}
-          powerFactor={snapshot.powerFactor ?? 0.98}
-          isHardwareLive={snapshot.isHardwareLive ?? true}
-          deviceId="DEV-638C71FE"
-          applianceId={activeHardwareRt?.id ? activeHardwareRt.id.toUpperCase() : "APP-79290D01"}
-          anomalyScore={activeHardwareRt?.anomalyScore ?? 0.05}
-          mode={activeHardwareRt?.mode ? activeHardwareRt.mode.toUpperCase() : "MAINTAIN"}
-          action={activeLoop?.action || "MAINTAIN_LOAD"}
-          relayCommand={(activeHardwareRt as any)?.relayCommand || (activeHardwareRt as any)?.relay_command || "LOW"}
-          predictedPowerW={activeHardwareRt?.targetPowerW ?? 0.4}
-          targetPowerW={activeHardwareRt?.targetPowerW ?? 100.0}
-          reward={activeLoop?.reward ?? -0.63}
+          voltageV={snapshot.voltageV}
+          currentA={snapshot.currentA}
+          powerW={snapshot.isHardwareLive ? snapshot.totalPowerW : undefined}
+          energyKwh={snapshot.isHardwareLive ? snapshot.energyTodayKwh : undefined}
+          temperatureC={snapshot.ambientTempC}
+          humidityPct={snapshot.ambientHumidityPct}
+          frequencyHz={snapshot.frequencyHz}
+          powerFactor={snapshot.powerFactor}
+          isHardwareLive={snapshot.isHardwareLive}
+          deviceId={activeHardwareRt?.deviceId}
+          applianceId={activeHardwareRt?.id}
+          anomalyScore={activeHardwareRt?.anomalyScore}
+          mode={activeHardwareRt?.mode?.toUpperCase()}
+          action={activeLoop?.action}
+          relayCommand={(activeHardwareRt as any)?.relayCommand || (activeHardwareRt as any)?.relay_command}
+          predictedPowerW={activeHardwareRt?.targetPowerW}
+          targetPowerW={activeHardwareRt?.targetPowerW}
+          reward={activeLoop?.reward}
           lastSeen={snapshot.t}
         />
       </section>

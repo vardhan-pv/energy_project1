@@ -45,8 +45,16 @@ def _load_env():
 
 _load_env()
 
-DATABASE_URL = os.environ.get("DATABASE_URL")
-IS_POSTGRES = bool(DATABASE_URL)
+# Explicit database engine selection
+# Default to "sqlite" for strict local operation unless IREOS_DB_ENGINE is set to "postgres"
+DB_ENGINE_CONFIG = os.environ.get("IREOS_DB_ENGINE", "sqlite").lower()
+
+if DB_ENGINE_CONFIG == "sqlite":
+    DATABASE_URL = None
+    IS_POSTGRES = False
+else:
+    DATABASE_URL = os.environ.get("DATABASE_URL")
+    IS_POSTGRES = bool(DATABASE_URL)
 
 if IS_POSTGRES:
     if DATABASE_URL.startswith("postgres://"):

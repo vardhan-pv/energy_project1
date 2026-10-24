@@ -9,8 +9,8 @@
 #include <hd44780ioClass/hd44780_I2Cexp.h>
 
 // ----------------------------- Site configuration ----------------------------
-// Active working URL on your Wi-Fi (laptop is running Flask api_server.py on port 5000):
-static const char *BACKEND_BASE_URL = "http://192.168.0.136:5000";
+// Laptop Wi-Fi IPv4; Flask is currently using port 5001 because 5000 is occupied.
+static const char *BACKEND_BASE_URL = "http://10.106.86.150:5000";
 static const char *DEVICE_ID = "SET_DEVICE_ID";       // from register_physical_esp32.py
 static const char *DEVICE_SECRET = "SET_DEVICE_SECRET"; // keep private; never commit real credentials
 static const char *APPLIANCE_ID = "SET_APPLIANCE_ID";  // from register_physical_esp32.py

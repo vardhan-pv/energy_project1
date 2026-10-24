@@ -33,13 +33,18 @@ export function DevicesPage() {
   }
 
   const activeHardwareRt = Object.values(runtimes).find((r) => r.isHardware);
-  const deviceId = activeHardwareRt?.id || "DEV-638C71FE";
+  const deviceId = activeHardwareRt?.deviceId;
 
   const handleResetSecret = async () => {
+    if (!deviceId) {
+      toast.error("No live device is available to reset.");
+      return;
+    }
+
     try {
       setResetting(true);
       const ds = createHttpDataSource(settings.apiBaseUrl, () => token);
-      const res = await ds.resetDeviceSecret(deviceId);
+      const res = await ds.resetDeviceSecret(deviceId!);
       if (res && res.ok && res.new_secret) {
         setNewSecret(res.new_secret);
         toast.success("Device secret regenerated successfully! Copy it to your ESP32 code.");
@@ -95,13 +100,13 @@ export function DevicesPage() {
               Device Type: ESP32 DevKit V1
             </span>
             <span className="bg-muted px-2.5 py-1 rounded border">
-              Device ID: {deviceId}
+              Device ID: {deviceId || "No live device detected"}
             </span>
             <Button
               variant="outline"
               size="sm"
               onClick={handleResetSecret}
-              disabled={resetting}
+              disabled={resetting || !deviceId}
               className="gap-1.5 text-xs h-7"
             >
               <KeyRound className="size-3.5 text-amber-500" />
