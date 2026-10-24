@@ -49,7 +49,7 @@ export const DEFAULT_SETTINGS: Settings = {
   reduceMotion: false,
   apiBaseUrl:
     (typeof import.meta !== "undefined" && (import.meta as any).env?.VITE_API_BASE_URL) ||
-    "https://energy-project1.onrender.com",
+    "https://iresro-project3.onrender.com",
   useLiveApi: true,
 };
 

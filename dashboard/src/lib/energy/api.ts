@@ -89,7 +89,7 @@ export function createHttpDataSource(baseUrl?: string, getToken?: () => string |
     (typeof import.meta !== "undefined" && (import.meta as any).env?.VITE_API_BASE_URL) ||
     (typeof process !== "undefined" && (process.env?.ENERGY_BACKEND_URL || process.env?.VITE_API_BASE_URL)) ||
     "";
-  const effectiveBase = baseUrl && baseUrl.trim() !== "" ? baseUrl : (envUrl || "https://energy-project1.onrender.com");
+  const effectiveBase = baseUrl && baseUrl.trim() !== "" ? baseUrl : (envUrl || "https://iresro-project3.onrender.com");
   const url = (p: string) => `${effectiveBase.replace(/\/$/, "")}${p}`;
   const json = async <T>(p: string, init?: RequestInit): Promise<T> => {
     const token = getToken ? getToken() : null;

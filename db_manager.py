@@ -27,11 +27,33 @@ DB_PATH = BASE_DIR / "ceos_database.db"
 JWT_SECRET = os.environ.get("JWT_SECRET", "ceos-super-secret-key-2026-phase15-production-token")
 JWT_ALGORITHM = "HS256"
 
+def _load_env():
+    for fname in [".env.local", ".env"]:
+        p = BASE_DIR / fname
+        if p.exists():
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            k, v = line.split("=", 1)
+                            k, v = k.strip(), v.strip().strip("'\"")
+                            if k not in os.environ:
+                                os.environ[k] = v
+            except Exception:
+                pass
+
+_load_env()
+
 DATABASE_URL = os.environ.get("DATABASE_URL")
 IS_POSTGRES = bool(DATABASE_URL)
 
-if IS_POSTGRES and DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+if IS_POSTGRES:
+    if DATABASE_URL.startswith("postgres://"):
+        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+    if "sslmode=" not in DATABASE_URL:
+        sep = "&" if "?" in DATABASE_URL else "?"
+        DATABASE_URL = f"{DATABASE_URL}{sep}sslmode=require"
 
 try:
     import psycopg2

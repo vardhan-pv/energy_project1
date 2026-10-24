@@ -202,3 +202,6 @@ dir
 mkdir
 notepad
 python
+.vercel
+.neon
+.env.local
